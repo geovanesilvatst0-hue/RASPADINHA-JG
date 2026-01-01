@@ -5,7 +5,7 @@ import AdminPanel from './components/AdminPanel';
 import { Prize, Winner, StoreConfig, AppView } from './types';
 import { INITIAL_PRIZES, INITIAL_CONFIG } from './constants';
 import { generatePrizeMessage } from './services/geminiService';
-import { Ticket, ChevronRight, AlertCircle, ShieldAlert } from 'lucide-react';
+import { Ticket, ChevronRight, AlertCircle, ShieldAlert, User, Check, Copy } from 'lucide-react';
 
 const isValidCPF = (cpf: string): boolean => {
   const cleanCPF = cpf.replace(/\D/g, '');
@@ -51,10 +51,47 @@ const App: React.FC = () => {
   const [aiMessage, setAiMessage] = useState('');
   const [isScratchingActive, setIsScratchingActive] = useState(false);
   const [isRevealed, setIsRevealed] = useState(false);
+  const [isCopied, setIsCopied] = useState(false);
   const scratchCardRef = useRef<ScratchCardRef>(null);
 
   // Lógica para verificar se está no modo cliente (Link do Admin Geral)
   const isClientMode = new URLSearchParams(window.location.search).get('mode') === 'client';
+
+  // Hidratação de estado via URL (SISTEMA PORTÁTIL)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const sharedData = params.get('s');
+    
+    if (sharedData) {
+      try {
+        const decoded = JSON.parse(decodeURIComponent(escape(atob(sharedData))));
+        
+        if (decoded.n) {
+          const newConfig = {
+            ...config,
+            name: decoded.n,
+            logoUrl: decoded.l || config.logoUrl,
+            primaryColor: decoded.c || config.primaryColor,
+            whatsappNumber: decoded.w || config.whatsappNumber
+          };
+          setConfig(newConfig);
+          localStorage.setItem('scratch_config', JSON.stringify(newConfig));
+        }
+        
+        if (decoded.p) {
+          setPrizes(decoded.p);
+          localStorage.setItem('scratch_prizes', JSON.stringify(decoded.p));
+        }
+
+        // Limpa a URL para estética, mas mantém o modo cliente
+        const newUrl = window.location.pathname + (isClientMode ? '?mode=client' : '');
+        window.history.replaceState({}, document.title, newUrl);
+        
+      } catch (e) {
+        console.error("Erro ao carregar link customizado:", e);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('scratch_config', JSON.stringify(config));
@@ -87,7 +124,6 @@ const App: React.FC = () => {
     const pool = prizes.length > 0 ? prizes : INITIAL_PRIZES;
     const randomPrize = pool[Math.floor(Math.random() * pool.length)];
     
-    // Gerando código de 5 dígitos (letras e números) conforme solicitado
     const code = Math.random().toString(36).substring(2, 7).toUpperCase();
     
     setCurrentPrize(randomPrize);
@@ -115,7 +151,6 @@ const App: React.FC = () => {
 
   const sendWhatsApp = () => {
     if (!currentPrize || !isRevealed) return;
-    // Formatando mensagem para o resgate oficial na loja
     const text = `🎟️ RESGATE DE PRÊMIO - ${config.name}\n\n👤 Cliente: ${currentUser.name}\n📄 CPF: ${currentUser.cpf}\n🎁 Ganhei: ${currentPrize.name}\n🔑 Código de Resgate: ${prizeCode}`;
     const url = `https://wa.me/${config.whatsappNumber.replace(/\D/g, '')}?text=${encodeURIComponent(text)}`;
     window.open(url, '_blank');
@@ -129,16 +164,30 @@ const App: React.FC = () => {
     setCurrentPrize(null);
   };
 
-  const shareApp = () => {
-    let shareText = `Olha essa raspadinha premiada da ${config.name}! 🎁 Tente a sorte você também e ganhe prêmios.`;
+  const shareApp = async () => {
+    // Codifica as configurações atuais para garantir que o link compartilhado reflita as mudanças salvas
+    const stateToShare = {
+      n: config.name,
+      l: config.logoUrl,
+      c: config.primaryColor,
+      w: config.whatsappNumber,
+      p: prizes
+    };
     
-    // Se o usuário já revelou o prêmio, compartilha os detalhes específicos do ganho
-    if (isRevealed && currentPrize) {
-      shareText = `🎟️ Olha o que eu ganhei na Raspadinha da ${config.name}!\n\n👤 Cliente: ${currentUser.name}\n📄 CPF: ${currentUser.cpf}\n🎁 Prêmio: ${currentPrize.name}\n🔑 Código de Resgate: ${prizeCode}`;
-    }
+    const encodedData = btoa(unescape(encodeURIComponent(JSON.stringify(stateToShare))));
+    const baseUrl = window.location.href.split('?')[0];
+    const finalUrl = `${baseUrl}?mode=client&s=${encodedData}`;
 
-    const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(shareText)}`;
-    window.open(whatsappUrl, '_blank');
+    // Texto informativo solicitado
+    const shareText = `🎟️ Raspadinha da ${config.name}\n\nTente a sorte você também e ganhe prêmios exclusivos! 🎁\n\nLink: ${finalUrl}`;
+    
+    try {
+      await navigator.clipboard.writeText(shareText);
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(null), 3000);
+    } catch (err) {
+      console.error('Falha ao copiar:', err);
+    }
   };
 
   if (view === 'admin') {
@@ -166,7 +215,7 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
+    <div className="min-h-screen flex items-center justify-center p-4 relative">
       <div className="w-full max-w-[480px] space-y-4">
         
         <header className="space-y-1">
@@ -238,17 +287,6 @@ const App: React.FC = () => {
               </button>
             </div>
 
-            {/* Ocultar Admin no modo cliente conforme pedido: "exceto acesso ao admin" */}
-            {!isClientMode && (
-              <button 
-                type="button"
-                onClick={() => setView('admin')}
-                className="w-full py-3 rounded-xl font-bold text-sm custom-button text-slate-200 active:scale-95"
-              >
-                Admin
-              </button>
-            )}
-
             {isClientMode && (
               <div className="w-full py-2 flex items-center justify-center gap-2 opacity-30 select-none">
                 <ShieldAlert size={12} className="text-slate-500" />
@@ -283,9 +321,10 @@ const App: React.FC = () => {
           </button>
           <button 
             onClick={shareApp}
-            className="py-3.5 rounded-xl text-[10px] font-bold uppercase tracking-tight custom-button text-slate-400 active:scale-95"
+            className={`py-3.5 rounded-xl text-[10px] font-bold uppercase tracking-tight custom-button transition-all flex items-center justify-center gap-1.5 ${isCopied ? 'text-green-400 border-green-500/30 bg-green-500/5' : 'text-slate-400'} active:scale-95`}
           >
-            Compartilhar
+            {isCopied ? <Check size={14} /> : null}
+            {isCopied ? 'Link Copiado' : 'Compartilhar'}
           </button>
           <button 
             onClick={() => scratchCardRef.current?.reveal()}
@@ -302,6 +341,17 @@ const App: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Ícone Discreto de Admin */}
+      {!isClientMode && (
+        <button 
+          onClick={() => setView('admin')}
+          className="fixed bottom-6 right-6 p-3 rounded-full bg-slate-800/40 text-slate-600 hover:text-slate-400 hover:bg-slate-800 transition-all active:scale-90 shadow-lg backdrop-blur-sm"
+          title="Configurações"
+        >
+          <User size={18} />
+        </button>
+      )}
     </div>
   );
 };

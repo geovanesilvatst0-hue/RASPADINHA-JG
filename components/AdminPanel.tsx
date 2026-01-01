@@ -125,8 +125,21 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ config, setConfig, prizes, setP
   };
 
   const copyClientSystemLink = (clientId: string) => {
+    // Coleta o estado atual para embutir na URL de forma segura
+    const stateToShare = {
+      n: config.name,
+      l: config.logoUrl,
+      c: config.primaryColor,
+      w: config.whatsappNumber,
+      p: prizes
+    };
+    
+    // Codifica em Base64 para a URL
+    const encodedData = btoa(unescape(encodeURIComponent(JSON.stringify(stateToShare))));
+    
     const baseUrl = window.location.href.split('?')[0];
-    const systemUrl = `${baseUrl}?mode=client&id=${clientId}`;
+    const systemUrl = `${baseUrl}?mode=client&s=${encodedData}`;
+    
     navigator.clipboard.writeText(systemUrl);
     setCopiedId(clientId);
     setTimeout(() => setCopiedId(null), 2000);
