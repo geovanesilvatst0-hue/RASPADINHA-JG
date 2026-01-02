@@ -3,7 +3,7 @@ export interface Prize {
   id: string;
   name: string;
   description: string;
-  isWinning: boolean;
+  iswinning: boolean;
 }
 
 export interface Winner {

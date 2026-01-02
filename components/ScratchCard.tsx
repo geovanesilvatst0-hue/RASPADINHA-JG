@@ -38,11 +38,9 @@ const ScratchCard = forwardRef<ScratchCardRef, ScratchCardProps>(({ prize, onCom
     canvas.width = offsetWidth;
     canvas.height = offsetHeight;
 
-    // Preencher com a cor cinza texturizada
     ctx.fillStyle = '#64748b'; 
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Adicionar textura de ruído
     for (let i = 0; i < 2000; i++) {
       ctx.fillStyle = `rgba(0, 0, 0, ${Math.random() * 0.15})`;
       ctx.beginPath();
@@ -50,7 +48,6 @@ const ScratchCard = forwardRef<ScratchCardRef, ScratchCardProps>(({ prize, onCom
       ctx.fill();
     }
 
-    // Adicionar texto "RASPE AQUI"
     ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
     ctx.font = 'bold 32px sans-serif';
     ctx.textAlign = 'center';
@@ -134,7 +131,7 @@ const ScratchCard = forwardRef<ScratchCardRef, ScratchCardProps>(({ prize, onCom
   return (
     <div 
       ref={containerRef}
-      className={`relative w-full aspect-video bg-slate-900 rounded-xl overflow-hidden shadow-inner border border-slate-700 transition-transform duration-500 ${revealed && prize.isWinning ? 'scale-[1.02] ring-4 ring-yellow-400/20' : ''}`}
+      className={`relative w-full aspect-video bg-slate-900 rounded-xl overflow-hidden shadow-inner border border-slate-700 transition-transform duration-500 ${revealed && prize.iswinning ? 'scale-[1.02] ring-4 ring-yellow-400/20' : ''}`}
     >
       <style>{`
         @keyframes confetti-fall {
@@ -148,11 +145,9 @@ const ScratchCard = forwardRef<ScratchCardRef, ScratchCardProps>(({ prize, onCom
         }
       `}</style>
 
-      {/* Camada de Resultado (Fica por baixo) */}
-      <div className={`absolute inset-0 flex flex-col items-center justify-center p-6 text-center select-none bg-slate-900 transition-all duration-700 ${revealed && prize.isWinning ? 'bg-gradient-to-b from-indigo-900/50 via-slate-900 to-indigo-900/40' : ''}`}>
+      <div className={`absolute inset-0 flex flex-col items-center justify-center p-6 text-center select-none bg-slate-900 transition-all duration-700 ${revealed && prize.iswinning ? 'bg-gradient-to-b from-indigo-900/50 via-slate-900 to-indigo-900/40' : ''}`}>
         
-        {/* Confetes animados - Mais variados e dinâmicos */}
-        {revealed && prize.isWinning && (
+        {revealed && prize.iswinning && (
           <div className="absolute inset-0 pointer-events-none">
             {[...Array(40)].map((_, i) => {
               const size = Math.random() * 8 + 4;
@@ -182,11 +177,11 @@ const ScratchCard = forwardRef<ScratchCardRef, ScratchCardProps>(({ prize, onCom
           </div>
         )}
 
-        <div className={`mb-3 text-6xl transition-all duration-700 transform ${revealed ? 'scale-110 rotate-0' : 'scale-90 rotate-0'} ${revealed && prize.isWinning ? 'animate-bounce' : ''}`}>
-          {prize.isWinning ? '🎁' : '❌'}
+        <div className={`mb-3 text-6xl transition-all duration-700 transform ${revealed ? 'scale-110 rotate-0' : 'scale-90 rotate-0'} ${revealed && prize.iswinning ? 'animate-bounce' : ''}`}>
+          {prize.iswinning ? '🎁' : '❌'}
         </div>
         
-        <h3 className={`text-2xl font-black mb-1 transition-colors duration-500 ${prize.isWinning ? 'text-yellow-400 drop-shadow-[0_0_12px_rgba(250,204,21,0.6)]' : 'text-slate-200'}`}>
+        <h3 className={`text-2xl font-black mb-1 transition-colors duration-500 ${prize.iswinning ? 'text-yellow-400 drop-shadow-[0_0_12px_rgba(250,204,21,0.6)]' : 'text-slate-200'}`}>
           {prize.name}
         </h3>
         
@@ -194,14 +189,13 @@ const ScratchCard = forwardRef<ScratchCardRef, ScratchCardProps>(({ prize, onCom
           {prize.description}
         </p>
 
-        {revealed && prize.isWinning && (
+        {revealed && prize.iswinning && (
           <div className="mt-4 px-4 py-1.5 bg-yellow-400/20 border border-yellow-400/40 rounded-full animate-pulse shadow-[0_0_15px_rgba(250,204,21,0.2)]">
             <span className="text-[11px] font-black text-yellow-400 uppercase tracking-[0.2em] drop-shadow-sm">VOCÊ GANHOU!</span>
           </div>
         )}
       </div>
 
-      {/* Camada da Raspadinha (Canvas por cima) */}
       <canvas
         ref={canvasRef}
         className="absolute inset-0 cursor-crosshair transition-opacity duration-700 w-full h-full"

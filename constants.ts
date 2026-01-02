@@ -2,10 +2,10 @@
 import { Prize, StoreConfig } from './types';
 
 export const INITIAL_PRIZES: Prize[] = [
-  { id: '1', name: '10% de Desconto', description: 'Ganhou 10% na próxima compra!', isWinning: true },
-  { id: '2', name: 'Brinde Surpresa', description: 'Retire um brinde no balcão!', isWinning: true },
-  { id: '3', name: 'Vale R$ 20,00', description: 'Desconto direto no caixa.', isWinning: true },
-  { id: '4', name: 'Tente Novamente', description: 'Não foi dessa vez!', isWinning: false },
+  { id: '1', name: '10% de Desconto', description: 'Ganhou 10% na próxima compra!', iswinning: true },
+  { id: '2', name: 'Brinde Surpresa', description: 'Retire um brinde no balcão!', iswinning: true },
+  { id: '3', name: 'Vale R$ 20,00', description: 'Desconto direto no caixa.', iswinning: true },
+  { id: '4', name: 'Tente Novamente', description: 'Não foi dessa vez!', iswinning: false },
 ];
 
 export const INITIAL_CONFIG: StoreConfig = {

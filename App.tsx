@@ -8,7 +8,6 @@ import { INITIAL_PRIZES, INITIAL_CONFIG } from './constants';
 import { generatePrizeMessage } from './services/geminiService';
 import { Ticket, ChevronRight, AlertCircle, ShieldAlert, User, Check, RefreshCw, DatabaseZap, Loader2 } from 'lucide-react';
 
-// --- CONFIGURAÇÃO SUPABASE ---
 const SUPABASE_URL = 'https://zhyxwzzcgmuooldwhmvz.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_ahq1ky6QS5sV7UodPjCmJA_HkZvuoWl';
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -110,7 +109,6 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // Lógica do contador regressivo de sincronização
   useEffect(() => {
     let timer: number;
     if (isSyncing && syncCountdown > 0) {
@@ -150,12 +148,12 @@ const App: React.FC = () => {
     setIsRevealed(false);
     setIsSyncing(false);
     setSyncCountdown(8);
-    generatePrizeMessage(randomPrize.name, randomPrize.isWinning).then(setAiMessage);
+    generatePrizeMessage(randomPrize.name, randomPrize.iswinning).then(setAiMessage);
   };
 
   const handleRevealComplete = () => {
     if (!isRevealed && !isSyncing) {
-      setIsSyncing(true); // Inicia a contagem de 8 segundos
+      setIsSyncing(true);
     }
   };
 
@@ -299,8 +297,8 @@ const App: React.FC = () => {
         <div className="grid grid-cols-3 gap-2">
           <button 
             onClick={() => window.open(whatsappLink, '_blank')} 
-            disabled={!isRevealed || !currentPrize?.isWinning} 
-            className={`py-3.5 rounded-xl text-[10px] font-bold uppercase custom-button ${(!isRevealed || !currentPrize?.isWinning) ? 'opacity-40 grayscale' : 'text-slate-200 active:scale-95 bg-green-600 border-green-500'}`}
+            disabled={!isRevealed || !currentPrize?.iswinning} 
+            className={`py-3.5 rounded-xl text-[10px] font-bold uppercase custom-button ${(!isRevealed || !currentPrize?.iswinning) ? 'opacity-40 grayscale' : 'text-slate-200 active:scale-95 bg-green-600 border-green-500'}`}
           >
             Quero resgatar
           </button>
@@ -320,7 +318,6 @@ const App: React.FC = () => {
           </button>
         </div>
 
-        {/* Feedback de Sincronização */}
         {isSyncing && (
           <div className="bg-indigo-600/10 border border-indigo-500/20 rounded-xl p-3 flex items-center justify-between animate-in fade-in zoom-in duration-300">
             <div className="flex items-center gap-3">

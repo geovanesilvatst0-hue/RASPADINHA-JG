@@ -38,7 +38,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ supabase, config, setConfig, pr
   const syncConfig = async () => {
     setSaveStatus('saving');
     
-    // Tentativa 1: Payload Completo usando whatsappnumber em minúsculo
     const fullPayload = {
       id: 1,
       name: config.name,
@@ -55,7 +54,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ supabase, config, setConfig, pr
     if (error) {
       console.error("Erro no upsert:", error);
       
-      // Tentativa 2: Se falhar por causa de colunas, tenta apenas o básico
       const basicPayload = {
         id: 1,
         name: config.name,
@@ -100,6 +98,9 @@ ALTER TABLE public.scratch_config ADD COLUMN IF NOT EXISTS "primaryColor" text D
 ALTER TABLE public.scratch_config ADD COLUMN IF NOT EXISTS "logoUrl" text DEFAULT 'https://cdn-icons-png.flaticon.com/512/606/606547.png';
 ALTER TABLE public.scratch_config ADD COLUMN IF NOT EXISTS "whatsappnumber" text;
 
+-- Atualizar coluna de prêmios se necessário
+ALTER TABLE public.scratch_prizes ADD COLUMN IF NOT EXISTS "iswinning" boolean DEFAULT true;
+
 -- Recarregar cache do sistema
 NOTIFY pgrst, 'reload schema';
 
@@ -140,12 +141,12 @@ ON CONFLICT (id) DO NOTHING;`;
             <AlertTriangle size={20} />
           </div>
           <div className="flex-1">
-            <h4 className="text-red-500 font-bold text-xs uppercase mb-1">Erro de Coluna Detectado?</h4>
+            <h4 className="text-red-500 font-bold text-xs uppercase mb-1">Ajuste de Banco Necessário?</h4>
             <p className="text-red-500/70 text-[10px] leading-relaxed mb-3">
-              Se você recebeu o erro "Could not find column", você precisa atualizar o banco de dados no Supabase.
+              Se colunas como "iswinning" ou "whatsappnumber" derem erro, use o script abaixo.
             </p>
             <button 
-              onClick={() => { navigator.clipboard.writeText(sqlRepair); alert('Script copiado! Vá ao SQL Editor do Supabase, cole e clique em RUN.'); }}
+              onClick={() => { navigator.clipboard.writeText(sqlRepair); alert('Script copiado!'); }}
               className="bg-slate-950 hover:bg-black text-white px-4 py-2 rounded-lg text-[10px] font-black flex items-center gap-2 border border-slate-800 transition-all"
             >
               <Terminal size={14} /> COPIAR SCRIPT DE REPARO
@@ -209,7 +210,7 @@ ON CONFLICT (id) DO NOTHING;`;
            <div className="space-y-6">
              <div className="flex justify-between items-center">
                <h3 className="text-lg font-black uppercase text-white">Prêmios Disponíveis</h3>
-               <button onClick={() => setPrizes([...prizes, { id: Date.now().toString(), name: 'Novo Item', description: 'Ganhou!', isWinning: true }])} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 text-xs">
+               <button onClick={() => setPrizes([...prizes, { id: Date.now().toString(), name: 'Novo Item', description: 'Ganhou!', iswinning: true }])} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 text-xs">
                  <Plus size={16} /> Novo
                </button>
              </div>
@@ -220,7 +221,7 @@ ON CONFLICT (id) DO NOTHING;`;
                      <input value={p.name} onChange={e => { const up = [...prizes]; up[idx].name = e.target.value; setPrizes(up); }} className="font-bold text-white bg-transparent outline-none w-full border-b border-transparent focus:border-indigo-500" />
                      <input value={p.description} onChange={e => { const up = [...prizes]; up[idx].description = e.target.value; setPrizes(up); }} className="text-[10px] text-slate-500 bg-transparent outline-none w-full" />
                    </div>
-                   <select value={p.isWinning ? "true" : "false"} onChange={e => { const up = [...prizes]; up[idx].isWinning = e.target.value === "true"; setPrizes(up); }} className="bg-slate-900 border border-slate-700 text-[9px] font-bold text-slate-400 p-2 rounded-lg">
+                   <select value={p.iswinning ? "true" : "false"} onChange={e => { const up = [...prizes]; up[idx].iswinning = e.target.value === "true"; setPrizes(up); }} className="bg-slate-900 border border-slate-700 text-[9px] font-bold text-slate-400 p-2 rounded-lg">
                      <option value="true">Ganhador</option>
                      <option value="false">Perdedor</option>
                    </select>
