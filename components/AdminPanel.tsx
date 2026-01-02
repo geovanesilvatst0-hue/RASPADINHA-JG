@@ -62,7 +62,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ supabase, config, setConfig, pr
 
   const syncPrizes = async (newPrizes: Prize[]) => {
     setSaveStatus('saving');
-    await supabase.from('scratch_prizes').delete().neq('id', 'xpto_system_id');
+    // Deletar prêmios antigos usando um filtro que sempre retorna verdadeiro mas é seguro
+    await supabase.from('scratch_prizes').delete().neq('name', '___system_reserved_name___');
     const { error } = await supabase.from('scratch_prizes').insert(newPrizes);
     
     if (error) {
@@ -83,8 +84,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ supabase, config, setConfig, pr
     setPrizes(prizes.filter(p => p.id !== id));
   };
 
-  // Script completo para o usuário copiar em caso de erro de coluna
-  const sqlRepair = `-- SCRIPT DE REPARO COMPLETO
+  // Script robusto (Idempotente) para o usuário copiar
+  const sqlRepair = `-- 1. CRIAR TABELAS (SE NÃO EXISTIREM)
 CREATE TABLE IF NOT EXISTS public.scratch_config (
   id bigint PRIMARY KEY DEFAULT 1,
   name text DEFAULT 'Minha Loja',
@@ -96,12 +97,6 @@ CREATE TABLE IF NOT EXISTS public.scratch_config (
   "globalAdminPassword" text DEFAULT '123',
   created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL
 );
-
--- Adicionar colunas caso a tabela já exista mas esteja incompleta
-ALTER TABLE public.scratch_config ADD COLUMN IF NOT EXISTS "adminContactNumber" text;
-ALTER TABLE public.scratch_config ADD COLUMN IF NOT EXISTS "globalAdminPassword" text;
-
-INSERT INTO public.scratch_config (id, name) VALUES (1, 'Minha Loja') ON CONFLICT (id) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS public.scratch_prizes (
   id text PRIMARY KEY,
@@ -121,9 +116,26 @@ CREATE TABLE IF NOT EXISTS public.scratch_winners (
   created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
-ALTER PUBLICATION supabase_realtime ADD TABLE public.scratch_config;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.scratch_prizes;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.scratch_winners;`;
+-- 2. ADICIONAR COLUNAS (CASO JÁ EXISTA A TABELA ANTIGA)
+ALTER TABLE public.scratch_config ADD COLUMN IF NOT EXISTS "adminContactNumber" text DEFAULT '5500000000000';
+ALTER TABLE public.scratch_config ADD COLUMN IF NOT EXISTS "globalAdminPassword" text DEFAULT '123';
+
+-- 3. INSERIR CONFIGURAÇÃO INICIAL (SE VAZIO)
+INSERT INTO public.scratch_config (id, name) VALUES (1, 'Minha Loja') ON CONFLICT (id) DO NOTHING;
+
+-- 4. HABILITAR REALTIME (COM VERIFICAÇÃO PARA EVITAR ERRO 42710)
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'scratch_config') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.scratch_config;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'scratch_prizes') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.scratch_prizes;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'scratch_winners') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.scratch_winners;
+  END IF;
+END $$;`;
 
   if (!isAuthenticated) {
     return (
@@ -163,9 +175,9 @@ ALTER PUBLICATION supabase_realtime ADD TABLE public.scratch_winners;`;
               <AlertTriangle size={24} />
             </div>
             <div className="flex-1">
-              <h4 className="text-amber-500 font-bold text-sm uppercase mb-1">Aviso de Estrutura</h4>
+              <h4 className="text-amber-500 font-bold text-sm uppercase mb-1">Atenção ao SQL</h4>
               <p className="text-amber-500/70 text-xs leading-relaxed mb-4">
-                Se você vir erros de "column not found", execute o script SQL abaixo no seu Supabase:
+                Se ocorrer erro de publicação ou colunas faltando, copie e execute este script atualizado no seu SQL Editor do Supabase:
               </p>
               <div className="relative">
                 <textarea 
@@ -174,10 +186,10 @@ ALTER PUBLICATION supabase_realtime ADD TABLE public.scratch_winners;`;
                   value={sqlRepair}
                 />
                 <button 
-                  onClick={() => { navigator.clipboard.writeText(sqlRepair); alert('Copiado!'); }}
+                  onClick={() => { navigator.clipboard.writeText(sqlRepair); alert('Copiado! Agora cole no SQL Editor do Supabase e clique em RUN.'); }}
                   className="absolute bottom-2 right-2 bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1 rounded-lg text-[9px] font-bold flex items-center gap-1.5"
                 >
-                  <Terminal size={12} /> Copiar SQL
+                  <Terminal size={12} /> Copiar SQL Corrigido
                 </button>
               </div>
             </div>

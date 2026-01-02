@@ -6,7 +6,7 @@ import AdminPanel from './components/AdminPanel';
 import { Prize, Winner, StoreConfig, AppView } from './types';
 import { INITIAL_PRIZES, INITIAL_CONFIG } from './constants';
 import { generatePrizeMessage } from './services/geminiService';
-import { Ticket, ChevronRight, AlertCircle, ShieldAlert, User, Check, RefreshCw, DatabaseZap } from 'lucide-react';
+import { Ticket, ChevronRight, AlertCircle, ShieldAlert, User, Check, RefreshCw, DatabaseZap, Loader2 } from 'lucide-react';
 
 // --- CONFIGURAÇÃO SUPABASE ---
 const SUPABASE_URL = 'https://zhyxwzzcgmuooldwhmvz.supabase.co';
@@ -45,6 +45,8 @@ const App: React.FC = () => {
   const [aiMessage, setAiMessage] = useState('');
   const [isScratchingActive, setIsScratchingActive] = useState(false);
   const [isRevealed, setIsRevealed] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncCountdown, setSyncCountdown] = useState(8);
   const [isCopied, setIsCopied] = useState(false);
   const scratchCardRef = useRef<ScratchCardRef>(null);
 
@@ -53,8 +55,6 @@ const App: React.FC = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
-      
-      // 1. Configurações
       const { data: configData, error: configError } = await supabase
         .from('scratch_config')
         .select('*')
@@ -65,7 +65,6 @@ const App: React.FC = () => {
       } else {
         setDbError(null);
         if (configData) {
-          // Garantir que whatsappNumber nunca seja nulo
           setConfig({
             ...INITIAL_CONFIG,
             ...configData,
@@ -74,7 +73,6 @@ const App: React.FC = () => {
         }
       }
 
-      // 2. Prêmios
       const { data: prizesData } = await supabase
         .from('scratch_prizes')
         .select('*')
@@ -84,7 +82,6 @@ const App: React.FC = () => {
         setPrizes(prizesData);
       }
 
-      // 3. Ganhadores
       const { data: winnersData } = await supabase
         .from('scratch_winners')
         .select('*')
@@ -93,7 +90,6 @@ const App: React.FC = () => {
       if (winnersData) {
         setWinners(winnersData);
       }
-
     } catch (e) {
       console.error("Fetch Error:", e);
     } finally {
@@ -103,18 +99,29 @@ const App: React.FC = () => {
 
   useEffect(() => {
     fetchData();
-
     const channel = supabase
       .channel('schema-db-changes')
       .on('postgres_changes', { event: '*', schema: 'public' }, () => {
         fetchData();
       })
       .subscribe();
-
     return () => {
       supabase.removeChannel(channel);
     };
   }, []);
+
+  // Lógica do contador regressivo de sincronização
+  useEffect(() => {
+    let timer: number;
+    if (isSyncing && syncCountdown > 0) {
+      timer = window.setInterval(() => {
+        setSyncCountdown(prev => prev - 1);
+      }, 1000);
+    } else if (isSyncing && syncCountdown === 0) {
+      completeSync();
+    }
+    return () => clearInterval(timer);
+  }, [isSyncing, syncCountdown]);
 
   const startScratch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -141,10 +148,18 @@ const App: React.FC = () => {
     setPrizeCode(code);
     setIsScratchingActive(true);
     setIsRevealed(false);
+    setIsSyncing(false);
+    setSyncCountdown(8);
     generatePrizeMessage(randomPrize.name, randomPrize.isWinning).then(setAiMessage);
   };
 
-  const handleRevealComplete = async () => {
+  const handleRevealComplete = () => {
+    if (!isRevealed && !isSyncing) {
+      setIsSyncing(true); // Inicia a contagem de 8 segundos
+    }
+  };
+
+  const completeSync = async () => {
     if (currentPrize && !isRevealed) {
       const newWinner = { 
         userName: currentUser.name, 
@@ -160,6 +175,7 @@ const App: React.FC = () => {
         console.error("Erro ao salvar:", error);
       }
       
+      setIsSyncing(false);
       setIsRevealed(true);
     }
   };
@@ -265,7 +281,7 @@ const App: React.FC = () => {
               <button type="submit" disabled={isScratchingActive} className={`py-3 rounded-xl font-bold text-sm custom-button flex items-center justify-center gap-2 ${isScratchingActive ? 'opacity-50' : 'text-white bg-indigo-600 border-indigo-500 active:scale-95'}`}>
                 {isScratchingActive ? 'Em jogo...' : 'Começar Agora'}
               </button>
-              <button type="button" onClick={() => {setCurrentUser({ name: '', cpf: '' }); setCpfError(false); setIsScratchingActive(false); setIsRevealed(false); setCurrentPrize(null);}} className="py-3 rounded-xl font-bold text-sm custom-button text-slate-400 active:scale-95">Limpar Tudo</button>
+              <button type="button" onClick={() => {setCurrentUser({ name: '', cpf: '' }); setCpfError(false); setIsScratchingActive(false); setIsRevealed(false); setIsSyncing(false); setCurrentPrize(null);}} className="py-3 rounded-xl font-bold text-sm custom-button text-slate-400 active:scale-95">Limpar Tudo</button>
             </div>
           </form>
         </div>
@@ -296,15 +312,26 @@ const App: React.FC = () => {
             {isCopied ? 'Copiado' : 'Compartilhar'}
           </button>
           <button 
-            onClick={() => scratchCardRef.current?.reveal()} 
-            disabled={!isScratchingActive || isRevealed} 
-            className={`py-3.5 rounded-xl text-[10px] font-bold uppercase custom-button ${(!isScratchingActive || isRevealed) ? 'opacity-40' : 'text-slate-400 active:scale-95'}`}
+            onClick={() => { if(!isSyncing) scratchCardRef.current?.reveal(); }} 
+            disabled={!isScratchingActive || isRevealed || isSyncing} 
+            className={`py-3.5 rounded-xl text-[10px] font-bold uppercase custom-button ${(!isScratchingActive || isRevealed || isSyncing) ? 'opacity-40' : 'text-slate-400 active:scale-95'}`}
           >
             Revelar
           </button>
         </div>
 
-        {isRevealed && aiMessage && (
+        {/* Feedback de Sincronização */}
+        {isSyncing && (
+          <div className="bg-indigo-600/10 border border-indigo-500/20 rounded-xl p-3 flex items-center justify-between animate-in fade-in zoom-in duration-300">
+            <div className="flex items-center gap-3">
+              <Loader2 className="text-indigo-500 animate-spin" size={18} />
+              <span className="text-xs font-bold text-indigo-400 uppercase tracking-wider">Validando prêmio no sistema...</span>
+            </div>
+            <span className="text-lg font-black text-indigo-500 font-mono">{syncCountdown}s</span>
+          </div>
+        )}
+
+        {(isRevealed || isSyncing) && aiMessage && (
           <div className="text-center animate-in fade-in slide-in-from-top-2 duration-700 py-2">
             <p className="text-sm text-indigo-400 italic font-medium leading-relaxed">"{aiMessage}"</p>
           </div>
