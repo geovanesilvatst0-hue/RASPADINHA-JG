@@ -12,9 +12,7 @@ import { hasSupabaseEnv, supabase } from './lib/supabase';
 // Prioridade: ?store=SLUG  -> subdomínio Netlify -> primeiro segmento do hostname.
 
 // UMA ÚNICA LOJA (fixo)
-const getStoreSlug = (): string => {
-  return "jgraspadinha";
-};
+const getStoreSlug = (): string => "jgraspadinha";
 
 
 // Função utilitária para validação de CPF
