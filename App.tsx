@@ -12,14 +12,20 @@ import { hasSupabaseEnv, supabase } from './lib/supabase';
 // Prioridade: ?store=SLUG  -> subdomínio Netlify -> primeiro segmento do hostname.
 const getStoreSlug = (): string => {
   const params = new URLSearchParams(window.location.search);
-  const fromParam = params.get('store');
+  const fromParam = params.get("store");
   if (fromParam) return fromParam;
 
   const host = window.location.hostname;
-  if (host.endsWith('.netlify.app')) return host.replace('.netlify.app', '');
 
-  const first = host.split('.')[0];
-  return first || 'default';
+  // remove sufixos comuns
+  const cleaned = host
+    .replace(".netlify.app", "")
+    .replace(".vercel.app", "");
+
+  // pega o primeiro pedaço do host (subdomínio)
+  const first = cleaned.split(".")[0];
+
+  return first || "default";
 };
 
 // Função utilitária para validação de CPF
