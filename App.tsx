@@ -12,8 +12,6 @@ import { hasSupabaseEnv, supabase } from './lib/supabase';
 // Prioridade: ?store=SLUG  -> subdomínio Netlify -> primeiro segmento do hostname.
 
 const getStoreSlug = (): string => {
-  return "default";
-};
   const params = new URLSearchParams(window.location.search);
   const fromParam = params.get("store");
   if (fromParam) return fromParam;
@@ -30,6 +28,7 @@ const getStoreSlug = (): string => {
 
   return first || "default";
 };
+
 
 // Função utilitária para validação de CPF
 const isValidCPF = (cpf: string): boolean => {
