@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import ScratchCard, { ScratchCardRef } from './components/ScratchCard';
 import AdminPanel from './components/AdminPanel';
 import { Prize, Winner, StoreConfig, AppView } from './types';
