@@ -11,7 +11,11 @@ import { hasSupabaseEnv, supabase } from './lib/supabase';
 // Identifica a "loja" (slug) para carregar/salvar no Supabase.
 // Prioridade: ?store=SLUG  -> subdomínio Netlify -> primeiro segmento do hostname.
 
-const getStoreSlug = (): string => "default";
+// UMA ÚNICA LOJA (fixo)
+const getStoreSlug = (): string => {
+  return "jgraspadinha";
+};
+
 
 // Função utilitária para validação de CPF
 const isValidCPF = (cpf: string): boolean => {
