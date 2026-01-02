@@ -38,11 +38,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ supabase, config, setConfig, pr
   const syncConfig = async () => {
     setSaveStatus('saving');
     
-    // Tentativa 1: Payload Completo
+    // Tentativa 1: Payload Completo usando whatsappnumber em minúsculo
     const fullPayload = {
       id: 1,
       name: config.name,
-      whatsappNumber: config.whatsappNumber,
+      whatsappnumber: config.whatsappnumber,
       adminPassword: config.adminPassword,
       primaryColor: config.primaryColor,
       logoUrl: config.logoUrl,
@@ -55,11 +55,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ supabase, config, setConfig, pr
     if (error) {
       console.error("Erro no upsert:", error);
       
-      // Tentativa 2: Se falhar por causa de colunas, tenta apenas o básico para não quebrar a UI
+      // Tentativa 2: Se falhar por causa de colunas, tenta apenas o básico
       const basicPayload = {
         id: 1,
         name: config.name,
-        whatsappNumber: config.whatsappNumber
+        whatsappnumber: config.whatsappnumber
       };
       
       const { error: error2 } = await supabase.from('scratch_config').upsert(basicPayload);
@@ -98,6 +98,7 @@ ALTER TABLE public.scratch_config ADD COLUMN IF NOT EXISTS "adminContactNumber" 
 ALTER TABLE public.scratch_config ADD COLUMN IF NOT EXISTS "globalAdminPassword" text DEFAULT '123';
 ALTER TABLE public.scratch_config ADD COLUMN IF NOT EXISTS "primaryColor" text DEFAULT '#4f46e5';
 ALTER TABLE public.scratch_config ADD COLUMN IF NOT EXISTS "logoUrl" text DEFAULT 'https://cdn-icons-png.flaticon.com/512/606/606547.png';
+ALTER TABLE public.scratch_config ADD COLUMN IF NOT EXISTS "whatsappnumber" text;
 
 -- Recarregar cache do sistema
 NOTIFY pgrst, 'reload schema';
@@ -186,7 +187,7 @@ ON CONFLICT (id) DO NOTHING;`;
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-bold text-slate-500 uppercase">WhatsApp de Resgate</label>
-                    <input type="text" value={config.whatsappNumber || ''} onChange={e => setConfig({...config, whatsappNumber: e.target.value})} className="w-full p-4 bg-slate-950 border border-slate-700 rounded-xl outline-none text-white focus:border-indigo-500" />
+                    <input type="text" value={config.whatsappnumber || ''} onChange={e => setConfig({...config, whatsappnumber: e.target.value})} className="w-full p-4 bg-slate-950 border border-slate-700 rounded-xl outline-none text-white focus:border-indigo-500" />
                   </div>
                 </div>
                 <div className="grid md:grid-cols-2 gap-4">

@@ -68,7 +68,7 @@ const App: React.FC = () => {
           setConfig({
             ...INITIAL_CONFIG,
             ...configData,
-            whatsappNumber: configData.whatsappNumber || INITIAL_CONFIG.whatsappNumber
+            whatsappnumber: configData.whatsappnumber || INITIAL_CONFIG.whatsappnumber
           });
         }
       }
@@ -194,7 +194,7 @@ const App: React.FC = () => {
     }
   };
 
-  const whatsappLink = `https://wa.me/${(config.whatsappNumber || '').replace(/\D/g, '')}?text=${encodeURIComponent(`🎟️ RESGATE - ${config.name}\n👤 Cliente: ${currentUser.name}\n📄 CPF: ${currentUser.cpf}\n🎁 Prêmio: ${currentPrize?.name}\n🔑 Código: ${prizeCode}`)}`;
+  const whatsappLink = `https://wa.me/${(config.whatsappnumber || '').replace(/\D/g, '')}?text=${encodeURIComponent(`🎟️ RESGATE - ${config.name}\n👤 Cliente: ${currentUser.name}\n📄 CPF: ${currentUser.cpf}\n🎁 Prêmio: ${currentPrize?.name}\n🔑 Código: ${prizeCode}`)}`;
 
   if (loading) {
     return (

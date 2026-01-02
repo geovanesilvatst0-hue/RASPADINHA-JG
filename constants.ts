@@ -12,7 +12,7 @@ export const INITIAL_CONFIG: StoreConfig = {
   name: 'JG',
   logoUrl: 'https://cdn-icons-png.flaticon.com/512/606/606547.png',
   primaryColor: '#4f46e5',
-  whatsappNumber: '5564993071404',
+  whatsappnumber: '5564993071404',
   adminPassword: 'admin',
   adminContactNumber: '5564993408657',
   globalAdminPassword: '123', // Senha inicial solicitada

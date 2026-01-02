@@ -28,7 +28,7 @@ export interface StoreConfig {
   name: string;
   logoUrl: string;
   primaryColor: string;
-  whatsappNumber: string;
+  whatsappnumber: string;
   adminPassword?: string;
   adminContactNumber?: string;
   globalAdminPassword?: string;
