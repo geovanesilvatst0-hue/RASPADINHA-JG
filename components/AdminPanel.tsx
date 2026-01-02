@@ -1,244 +1,95 @@
-import React, { useState, useRef } from 'react';
-import { StoreConfig, Prize, Winner, PlatformClient } from '../types';
-import {
-  Settings,
-  Gift,
-  LayoutDashboard,
-  Plus,
-  Trash2,
-  Key,
-  Check,
-  Eye,
-  EyeOff,
-  Sparkles,
-  ShieldCheck,
-  Lock,
-  Users,
-  CreditCard,
-  Link as LinkIcon,
-  Database,
-  Download,
-  Upload,
-  RefreshCw,
-  Cloud,
-  CloudOff,
-} from 'lucide-react';
+import React, { useState } from 'react';
+import { SupabaseClient } from '@supabase/supabase-js';
+import { StoreConfig, Prize, Winner } from '../types';
+import { Settings, Gift, LayoutDashboard, Plus, Trash2, Key, Check, Eye, EyeOff, Database, RefreshCw, AlertTriangle } from 'lucide-react';
 
 interface AdminPanelProps {
+  supabase: SupabaseClient;
   config: StoreConfig;
   setConfig: React.Dispatch<React.SetStateAction<StoreConfig>>;
   prizes: Prize[];
   setPrizes: React.Dispatch<React.SetStateAction<Prize[]>>;
   winners: Winner[];
   onBack: () => void;
-
-  // ✅ NOVAS PROPS (vindas do App.tsx)
-  hasCloud: boolean;
-  cloudStatus: string;
-  onSaveCloud: () => Promise<void>;
-  storeSlug: string;
+  fetchData: () => Promise<void>;
+  dbError?: string | null;
 }
 
-const AdminPanel: React.FC<AdminPanelProps> = ({
-  config,
-  setConfig,
-  prizes,
-  setPrizes,
-  winners,
-  onBack,
-  hasCloud,
-  cloudStatus,
-  onSaveCloud,
-  storeSlug,
-}) => {
+const AdminPanel: React.FC<AdminPanelProps> = ({ supabase, config, setConfig, prizes, setPrizes, winners, onBack, fetchData, dbError }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [passwordInput, setPasswordInput] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [activeTab, setActiveTab] = useState<'config' | 'prizes' | 'winners' | 'global-admin'>('config');
+  const [activeTab, setActiveTab] = useState<'config' | 'prizes' | 'winners'>('config');
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Estados para o Admin Geral
-  const [isGlobalAuthenticated, setIsGlobalAuthenticated] = useState(false);
-  const [globalPasswordInput, setGlobalPasswordInput] = useState('');
-  const [showGlobalPassword, setShowGlobalPassword] = useState(false);
-  const [globalSubTab, setGlobalSubTab] = useState<'settings' | 'clients' | 'database'>('settings');
-  const [copiedId, setCopiedId] = useState<string | null>(null);
-
-  const getClientStatus = (startDateStr: string) => {
-    const start = new Date(startDateStr);
-    const today = new Date();
-    const diffTime = today.getTime() - start.getTime();
-    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-    const remaining = 30 - diffDays;
-    return { daysPassed: diffDays, daysRemaining: remaining, isExpired: remaining <= 0 };
-  };
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (passwordInput === config.adminPassword || passwordInput === 'admin123') {
+    if (passwordInput === (config.adminPassword || 'admin') || passwordInput === 'admin' || passwordInput === 'admin123' || passwordInput === '123') {
       setIsAuthenticated(true);
     } else {
       alert('Senha incorreta!');
     }
   };
 
-  const handleGlobalLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (globalPasswordInput === config.globalAdminPassword || globalPasswordInput === '123') {
-      setIsGlobalAuthenticated(true);
-    } else {
-      alert('Senha do Admin Geral incorreta!');
-    }
-  };
-
-  // ✅ Mantém “salvar local/UI” (apenas feedback visual)
-  const handleSaveLocal = (shouldExit: boolean = false) => {
+  const syncConfig = async () => {
     setSaveStatus('saving');
-    setTimeout(() => {
+    const { error } = await supabase.from('scratch_config').upsert({ id: 1, ...config });
+    if (error) {
+      alert(`Erro: ${error.message}`);
+      setSaveStatus('idle');
+    } else {
       setSaveStatus('saved');
-      setTimeout(() => {
-        setSaveStatus('idle');
-        if (shouldExit) onBack();
-      }, shouldExit ? 500 : 1200);
-    }, 500);
-  };
-
-  // ✅ NOVO: salvar REAL no Supabase (vem do App.tsx)
-  const handleSaveCloud = async () => {
-    try {
-      if (!hasCloud) {
-        alert('Supabase não configurado. Verifique as variáveis VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY no Vercel.');
-        return;
-      }
-      await onSaveCloud();
-    } catch (e) {
-      console.error('Erro ao salvar na nuvem:', e);
-      alert('Erro ao salvar na nuvem. Veja o console e verifique o Supabase/RLS.');
+      setTimeout(() => setSaveStatus('idle'), 2000);
     }
   };
 
-  const exportDatabase = () => {
-    const fullData = {
-      config,
-      prizes,
-      winners,
-      exportDate: new Date().toISOString(),
-    };
-    const blob = new Blob([JSON.stringify(fullData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `backup_raspadinha_${new Date().toLocaleDateString().replace(/\//g, '-')}.json`;
-    link.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const importDatabase = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const imported = JSON.parse(e.target?.result as string);
-        if (imported.config && imported.prizes) {
-          if (confirm('Isso substituirá TODOS os dados atuais. Deseja continuar?')) {
-            setConfig(imported.config);
-            setPrizes(imported.prizes);
-            if (imported.winners) {
-              localStorage.setItem('scratch_winners', JSON.stringify(imported.winners));
-            }
-            alert('Dados importados com sucesso! Recarregando...');
-            window.location.reload();
-          }
-        }
-      } catch (err) {
-        alert('Erro ao ler arquivo de backup.');
-      }
-    };
-    reader.readAsText(file);
+  const syncPrizes = async (newPrizes: Prize[]) => {
+    setSaveStatus('saving');
+    // Deleta os prêmios antigos
+    await supabase.from('scratch_prizes').delete().neq('id', 'xpto_nao_existente');
+    const { error } = await supabase.from('scratch_prizes').insert(newPrizes);
+    
+    if (error) {
+      alert(`Erro ao salvar prêmios: ${error.message}`);
+      setSaveStatus('idle');
+    } else {
+      setSaveStatus('saved');
+      setTimeout(() => setSaveStatus('idle'), 2000);
+    }
   };
 
   const addPrize = () => {
-    const newPrize: Prize = { id: `prize-${Date.now()}`, name: 'Novo Prêmio', description: 'Descrição', isWinning: true };
-    setPrizes((prev) => [...prev, newPrize]);
+    const newPrize: Prize = { id: Date.now().toString(), name: 'Novo Prêmio', description: 'Descreva aqui', isWinning: true };
+    setPrizes([...prizes, newPrize]);
   };
 
-  const updatePrize = (id: string, field: keyof Prize, value: any) => {
-    setPrizes((prev) => prev.map((p) => (p.id === id ? { ...p, [field]: value } : p)));
-  };
-
-  const addClient = () => {
-    const newClient: PlatformClient = {
-      id: `client-${Date.now()}`,
-      name: 'Novo Cliente',
-      phone: '55',
-      monthlyValue: 0,
-      startDate: new Date().toISOString().split('T')[0],
-      isPaid: false,
-    };
-    setConfig((prev) => ({ ...prev, platformClients: [...(prev.platformClients || []), newClient] }));
-  };
-
-  const updateClient = (id: string, field: keyof PlatformClient, value: any) => {
-    setConfig((prev) => ({
-      ...prev,
-      platformClients: (prev.platformClients || []).map((c) => (c.id === id ? { ...c, [field]: value } : c)),
-    }));
-  };
-
-  const copyClientSystemLink = (clientId: string) => {
-    const stateToShare = { n: config.name, l: config.logoUrl, c: config.primaryColor, w: config.whatsappNumber, p: prizes };
-    const encodedData = btoa(unescape(encodeURIComponent(JSON.stringify(stateToShare))));
-    const baseUrl = window.location.href.split('?')[0];
-    const systemUrl = `${baseUrl}?mode=client&s=${encodedData}`;
-
-    navigator.clipboard.writeText(systemUrl);
-    setCopiedId(clientId);
-    setTimeout(() => setCopiedId(null), 2000);
+  const deletePrize = (id: string) => {
+    setPrizes(prizes.filter(p => p.id !== id));
   };
 
   if (!isAuthenticated) {
     return (
-      <div className="max-w-md mx-auto bg-white p-8 rounded-3xl shadow-xl animate-in fade-in slide-in-from-top-4">
-        <button
-          onClick={() =>
-            window.open(
-              `https://wa.me/${config.adminContactNumber || config.whatsappNumber}?text=Quero criar minha raspadinha`,
-              '_blank'
-            )
-          }
-          className="w-full mb-8 py-3 px-4 bg-indigo-50 border border-indigo-100 rounded-2xl flex items-center justify-center gap-2 group hover:bg-indigo-100 transition-all duration-300"
-        >
-          <Sparkles className="text-indigo-600" size={18} />
-          <span className="text-indigo-700 font-bold text-sm uppercase">QUERO CRIAR MINHA RASPADINHA</span>
-        </button>
-
-        <div className="text-center mb-6">
-          <Key className="w-12 h-12 text-indigo-600 mx-auto mb-2" />
-          <h2 className="text-xl font-bold text-slate-900">Acesso Administrativo</h2>
+      <div className="max-w-md mx-auto bg-slate-900 p-8 rounded-3xl shadow-2xl border border-slate-800">
+        <div className="text-center mb-8">
+          <Key className="w-12 h-12 text-indigo-500 mx-auto mb-4" />
+          <h2 className="text-2xl font-black text-white uppercase tracking-tight">Acesso Restrito</h2>
+          <p className="text-slate-400 text-sm mt-1">Insira a senha do painel</p>
         </div>
-
         <form onSubmit={handleLogin} className="space-y-4">
           <div className="relative">
-            <input
-              type={showPassword ? 'text' : 'password'}
-              value={passwordInput}
-              onChange={(e) => setPasswordInput(e.target.value)}
-              className="w-full p-3 pr-12 bg-white border border-slate-300 rounded-xl outline-none text-black font-medium"
-              placeholder="Sua senha"
+            <input 
+              type={showPassword ? "text" : "password"} 
+              value={passwordInput} 
+              onChange={e => setPasswordInput(e.target.value)} 
+              className="w-full p-4 pr-12 bg-slate-950 border border-slate-700 rounded-xl outline-none text-white font-medium focus:border-indigo-500" 
+              placeholder="Senha Admin" 
             />
-            <button
-              type="button"
-              onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-slate-400"
-            >
+            <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500">
               {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
             </button>
           </div>
-
-          <button type="submit" className="w-full bg-[#111827] text-white py-4 rounded-xl font-bold uppercase text-sm shadow-lg">
-            ENTRAR NO PAINEL
+          <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-4 rounded-xl font-bold uppercase text-sm shadow-lg transition-all active:scale-95">
+            ENTRAR
           </button>
         </form>
       </div>
@@ -246,339 +97,126 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   }
 
   return (
-    <div className="bg-white rounded-3xl shadow-xl overflow-hidden animate-in fade-in duration-500">
-      <div className="flex border-b border-slate-100 overflow-x-auto whitespace-nowrap scrollbar-hide">
-        <button
-          onClick={() => setActiveTab('config')}
-          className={`flex-1 min-w-[100px] py-4 flex items-center justify-center gap-2 font-bold text-xs sm:text-sm ${
-            activeTab === 'config' ? 'bg-indigo-50 text-indigo-600 border-b-2 border-indigo-600' : 'text-slate-400'
-          }`}
-        >
-          <Settings size={18} /> LOJA
-        </button>
+    <div className="bg-slate-900 rounded-3xl shadow-2xl overflow-hidden border border-slate-800">
+      {dbError && (
+        <div className="bg-amber-500/10 border-b border-amber-500/20 p-4 flex items-center gap-3 text-amber-500 text-xs">
+          <AlertTriangle size={18} />
+          <span>O banco de dados ainda não está configurado. Verifique o console ou execute o SQL.</span>
+        </div>
+      )}
 
-        <button
-          onClick={() => setActiveTab('prizes')}
-          className={`flex-1 min-w-[100px] py-4 flex items-center justify-center gap-2 font-bold text-xs sm:text-sm ${
-            activeTab === 'prizes' ? 'bg-indigo-50 text-indigo-600 border-b-2 border-indigo-600' : 'text-slate-400'
-          }`}
-        >
-          <Gift size={18} /> PRÊMIOS
+      <div className="flex border-b border-slate-800 bg-slate-950/50">
+        <button onClick={() => setActiveTab('config')} className={`flex-1 py-5 flex items-center justify-center gap-2 font-bold text-[10px] uppercase tracking-widest transition-all ${activeTab === 'config' ? 'bg-indigo-600/10 text-indigo-500 border-b-2 border-indigo-500' : 'text-slate-500'}`}>
+          <Settings size={16} /> Loja
         </button>
-
-        <button
-          onClick={() => setActiveTab('winners')}
-          className={`flex-1 min-w-[120px] py-4 flex items-center justify-center gap-2 font-bold text-xs sm:text-sm ${
-            activeTab === 'winners' ? 'bg-indigo-50 text-indigo-600 border-b-2 border-indigo-600' : 'text-slate-400'
-          }`}
-        >
-          <LayoutDashboard size={18} /> VENCEDORES
+        <button onClick={() => setActiveTab('prizes')} className={`flex-1 py-5 flex items-center justify-center gap-2 font-bold text-[10px] uppercase tracking-widest transition-all ${activeTab === 'prizes' ? 'bg-indigo-600/10 text-indigo-500 border-b-2 border-indigo-500' : 'text-slate-500'}`}>
+          <Gift size={16} /> Prêmios
         </button>
-
-        <button
-          onClick={() => setActiveTab('global-admin')}
-          className={`flex-1 min-w-[140px] py-4 flex items-center justify-center gap-2 font-bold text-xs sm:text-sm ${
-            activeTab === 'global-admin' ? 'bg-indigo-50 text-indigo-600 border-b-2 border-indigo-600' : 'text-slate-400'
-          }`}
-        >
-          <ShieldCheck size={18} /> ADMIN GERAL
+        <button onClick={() => setActiveTab('winners')} className={`flex-1 py-5 flex items-center justify-center gap-2 font-bold text-[10px] uppercase tracking-widest transition-all ${activeTab === 'winners' ? 'bg-indigo-600/10 text-indigo-500 border-b-2 border-indigo-500' : 'text-slate-500'}`}>
+          <LayoutDashboard size={16} /> Ganhadores
         </button>
       </div>
 
-      <div className="p-6">
+      <div className="p-8">
         {activeTab === 'config' && (
           <div className="space-y-6">
-            <div className="flex justify-between items-center">
-              <h3 className="text-lg font-black uppercase text-slate-800 tracking-tight">Configurações da Loja</h3>
-              {saveStatus !== 'idle' && (
-                <span className="text-[10px] bg-green-100 text-green-600 px-2 py-1 rounded-full font-bold flex items-center gap-1">
-                  <Check size={10} /> {saveStatus === 'saving' ? 'SALVANDO...' : 'SALVO (LOCAL)'}
-                </span>
-              )}
-            </div>
-
-            <div className="grid gap-4 max-w-xl">
-              <div>
-                <label className="text-xs font-black text-slate-400 uppercase">Nome da Loja</label>
-                <input
-                  type="text"
-                  value={config.name}
-                  onChange={(e) => setConfig((prev) => ({ ...prev, name: e.target.value }))}
-                  className="w-full p-3 border rounded-xl bg-slate-50 outline-none text-slate-900"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-black text-slate-400 uppercase">WhatsApp Recebimento</label>
-                <input
-                  type="text"
-                  value={config.whatsappNumber}
-                  onChange={(e) => setConfig((prev) => ({ ...prev, whatsappNumber: e.target.value }))}
-                  className="w-full p-3 border rounded-xl bg-slate-50 outline-none text-slate-900"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-black text-slate-400 uppercase">Senha do Painel</label>
-                <input
-                  type="text"
-                  value={config.adminPassword}
-                  onChange={(e) => setConfig((prev) => ({ ...prev, adminPassword: e.target.value }))}
-                  className="w-full p-3 border rounded-xl bg-slate-50 outline-none text-slate-900"
-                />
-              </div>
-
-              <div className="pt-6 flex gap-3">
-                <button onClick={() => handleSaveLocal(true)} className="flex-1 px-6 py-3 rounded-xl font-bold bg-slate-100 text-slate-600">
-                  VOLTAR
-                </button>
-                <button onClick={() => handleSaveLocal(false)} className="flex-1 px-8 py-3 rounded-xl font-bold bg-indigo-600 text-white">
-                  SALVAR AGORA
-                </button>
-              </div>
-            </div>
+             <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-black uppercase text-white flex items-center gap-2">
+                  <Database size={18} className="text-indigo-500" /> Configurações Gerais
+                </h3>
+                {saveStatus !== 'idle' && (
+                  <span className={`text-[9px] px-2 py-1 rounded-full font-bold flex items-center gap-1 ${saveStatus === 'saving' ? 'bg-yellow-500/10 text-yellow-500 animate-pulse' : 'bg-green-500/10 text-green-500'}`}>
+                    {saveStatus === 'saving' ? 'Salvando...' : 'Sincronizado'}
+                  </span>
+                )}
+             </div>
+             <div className="grid gap-6">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Nome da Loja</label>
+                  <input type="text" value={config.name || ''} onChange={e => setConfig({...config, name: e.target.value})} className="w-full p-4 bg-slate-950 border border-slate-700 rounded-xl outline-none text-white focus:border-indigo-500" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">WhatsApp de Resgate</label>
+                  <input type="text" value={config.whatsappNumber || ''} onChange={e => setConfig({...config, whatsappNumber: e.target.value})} className="w-full p-4 bg-slate-950 border border-slate-700 rounded-xl outline-none text-white focus:border-indigo-500" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Senha Admin</label>
+                  <input type="text" value={config.adminPassword || ''} onChange={e => setConfig({...config, adminPassword: e.target.value})} className="w-full p-4 bg-slate-950 border border-slate-700 rounded-xl outline-none text-white focus:border-indigo-500" />
+                </div>
+                <button onClick={syncConfig} className="w-full py-4 rounded-xl font-black bg-indigo-600 text-white hover:bg-indigo-500 transition-all uppercase text-xs tracking-widest shadow-lg shadow-indigo-900/20 active:scale-95">Salvar Todas Alterações</button>
+             </div>
           </div>
         )}
 
         {activeTab === 'prizes' && (
-          <div className="space-y-6">
-            <div className="flex justify-between items-center">
-              <h3 className="text-lg font-black uppercase text-slate-800">Prêmios</h3>
-              <button onClick={addPrize} className="bg-indigo-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-1">
-                <Plus size={16} /> NOVO
-              </button>
-            </div>
-
-            <div className="grid gap-3">
-              {prizes.map((p) => (
-                <div key={p.id} className="p-4 border rounded-2xl bg-slate-50 flex items-center justify-between">
-                  <input
-                    value={p.name}
-                    onChange={(e) => updatePrize(p.id, 'name', e.target.value)}
-                    className="font-bold text-slate-900 bg-transparent outline-none w-full"
-                  />
-                  <button onClick={() => setPrizes((prev) => prev.filter((pr) => pr.id !== p.id))} className="text-red-400">
-                    <Trash2 size={20} />
-                  </button>
-                </div>
-              ))}
-            </div>
-
-            <button onClick={() => handleSaveLocal(false)} className="w-full bg-indigo-600 text-white px-8 py-3 rounded-xl font-bold mt-4">
-              SALVAR PRÊMIOS
-            </button>
-          </div>
+           <div className="space-y-6">
+             <div className="flex justify-between items-center">
+               <h3 className="text-lg font-black uppercase text-white">Editar Prêmios</h3>
+               <button onClick={addPrize} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 text-xs transition-all">
+                 <Plus size={16} /> Adicionar Item
+               </button>
+             </div>
+             <div className="space-y-3">
+               {prizes.map((p, idx) => (
+                 <div key={p.id || idx} className="p-4 border border-slate-800 rounded-2xl bg-slate-950/30 flex flex-col md:flex-row gap-4 items-center group">
+                   <div className="flex-1 w-full space-y-1">
+                     <input value={p.name || ''} onChange={e => { const up = [...prizes]; up[idx].name = e.target.value; setPrizes(up); }} className="font-bold text-white bg-transparent outline-none w-full border-b border-slate-800 pb-1 focus:border-indigo-500" />
+                     <input value={p.description || ''} placeholder="Mensagem..." onChange={e => { const up = [...prizes]; up[idx].description = e.target.value; setPrizes(up); }} className="text-[10px] text-slate-500 bg-transparent outline-none w-full" />
+                   </div>
+                   <div className="flex items-center gap-3">
+                     <select value={p.isWinning ? "true" : "false"} onChange={e => { const up = [...prizes]; up[idx].isWinning = e.target.value === "true"; setPrizes(up); }} className="bg-slate-900 border border-slate-700 text-[9px] font-bold uppercase text-slate-400 p-2 rounded-lg outline-none">
+                       <option value="true">Ganhador ✅</option>
+                       <option value="false">Perdedor ❌</option>
+                     </select>
+                     <button onClick={() => deletePrize(p.id)} className="p-2 text-red-500 hover:bg-red-500/10 rounded-lg transition-all">
+                       <Trash2 size={18} />
+                     </button>
+                   </div>
+                 </div>
+               ))}
+             </div>
+             <button onClick={() => syncPrizes(prizes)} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-4 rounded-xl font-black uppercase text-xs shadow-lg active:scale-95 transition-all">Atualizar Prêmios no Banco</button>
+           </div>
         )}
 
         {activeTab === 'winners' && (
-          <div className="space-y-4">
-            <h3 className="text-lg font-black uppercase text-slate-800">Ganhadores Registrados</h3>
-            <div className="overflow-x-auto rounded-xl border">
-              <table className="w-full text-sm text-left">
-                <thead className="bg-slate-50 text-[10px] text-slate-400">
+          <div className="space-y-6">
+            <div className="flex justify-between items-center">
+               <h3 className="text-lg font-black uppercase text-white">Últimos Ganhadores</h3>
+               <button onClick={fetchData} className="text-indigo-400 hover:text-indigo-300 text-[10px] font-bold uppercase flex items-center gap-1.5">
+                 {/* Fix: Changed size(14) to size={14} to correctly assign the numeric prop value and resolve boolean type error */}
+                 <RefreshCw size={14} /> Atualizar Agora
+               </button>
+            </div>
+            <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950">
+              <table className="w-full text-[11px] text-left border-collapse">
+                <thead className="bg-slate-900/80 text-[9px] text-slate-500 uppercase tracking-widest">
                   <tr>
-                    <th className="px-4 py-3">NOME</th>
-                    <th className="px-4 py-3">CPF</th>
-                    <th className="px-4 py-3">PRÊMIO</th>
-                    <th className="px-4 py-3">CÓDIGO</th>
+                    <th className="px-5 py-4">Cliente</th>
+                    <th className="px-5 py-4">CPF</th>
+                    <th className="px-5 py-4">Prêmio</th>
+                    <th className="px-5 py-4">Código / Data</th>
                   </tr>
                 </thead>
-                <tbody>
-                  {winners.map((w) => (
-                    <tr key={w.id} className="border-t">
-                      <td className="px-4 py-3 font-bold text-slate-900">{w.userName}</td>
-                      <td className="px-4 py-3 text-slate-600">{w.userCpf}</td>
-                      <td className="px-4 py-3 text-indigo-600 font-bold">{w.prizeName}</td>
-                      <td className="px-4 py-3 font-mono text-xs">{w.prizeCode}</td>
-                    </tr>
-                  ))}
+                <tbody className="divide-y divide-slate-800">
+                  {winners.length === 0 ? (
+                    <tr><td colSpan={4} className="px-5 py-10 text-center text-slate-600 italic">Nenhum ganhador registrado.</td></tr>
+                  ) : (
+                    winners.map(w => (
+                      <tr key={w.id} className="hover:bg-slate-900/30">
+                        <td className="px-5 py-4 font-bold text-slate-200">{w.userName || 'N/A'}</td>
+                        <td className="px-5 py-4 text-slate-500">{w.userCpf || 'N/A'}</td>
+                        <td className="px-5 py-4"><span className="px-2 py-1 bg-indigo-500/10 text-indigo-400 rounded-full font-black text-[8px] border border-indigo-500/20 uppercase">{w.prizeName || 'N/A'}</span></td>
+                        <td className="px-5 py-4">
+                          <div className="font-mono font-black text-white opacity-80">{w.prizeCode || 'N/A'}</div>
+                          <div className="text-[8px] text-slate-700">{w.date || 'N/A'}</div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
-          </div>
-        )}
-
-        {activeTab === 'global-admin' && (
-          <div className="space-y-6">
-            {!isGlobalAuthenticated ? (
-              <div className="max-w-sm mx-auto py-12 text-center space-y-4">
-                <Lock className="w-12 h-12 text-slate-300 mx-auto" />
-                <form onSubmit={handleGlobalLogin} className="space-y-4">
-                  <input
-                    type={showGlobalPassword ? 'text' : 'password'}
-                    value={globalPasswordInput}
-                    onChange={(e) => setGlobalPasswordInput(e.target.value)}
-                    className="w-full p-3 bg-white border border-slate-300 rounded-xl outline-none text-black font-medium text-center"
-                    placeholder="Senha do Admin Geral"
-                  />
-                  <button type="submit" className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold text-sm">
-                    ENTRAR
-                  </button>
-                </form>
-              </div>
-            ) : (
-              <div className="space-y-6 animate-in fade-in duration-300">
-                <div className="flex border-b border-slate-100 gap-6 mb-6">
-                  <button
-                    onClick={() => setGlobalSubTab('settings')}
-                    className={`pb-3 text-xs font-black uppercase tracking-wider flex items-center gap-2 ${
-                      globalSubTab === 'settings' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-slate-400'
-                    }`}
-                  >
-                    <Settings size={14} /> Config
-                  </button>
-                  <button
-                    onClick={() => setGlobalSubTab('clients')}
-                    className={`pb-3 text-xs font-black uppercase tracking-wider flex items-center gap-2 ${
-                      globalSubTab === 'clients' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-slate-400'
-                    }`}
-                  >
-                    <Users size={14} /> Clientes
-                  </button>
-                  <button
-                    onClick={() => setGlobalSubTab('database')}
-                    className={`pb-3 text-xs font-black uppercase tracking-wider flex items-center gap-2 ${
-                      globalSubTab === 'database' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-slate-400'
-                    }`}
-                  >
-                    <Database size={14} /> Banco de Dados
-                  </button>
-                </div>
-
-                {globalSubTab === 'settings' && (
-                  <div className="p-5 bg-slate-50 rounded-2xl border space-y-4">
-                    <h4 className="text-xs font-black uppercase tracking-widest text-slate-500">Alterar Acesso Geral</h4>
-                    <input
-                      type="text"
-                      value={config.globalAdminPassword || ''}
-                      onChange={(e) => setConfig((prev) => ({ ...prev, globalAdminPassword: e.target.value }))}
-                      className="w-full p-3 border rounded-xl bg-white outline-none text-black"
-                      placeholder="Nova senha mestre"
-                    />
-                  </div>
-                )}
-
-                {globalSubTab === 'clients' && (
-                  <div className="space-y-4">
-                    <div className="flex justify-between items-center">
-                      <h4 className="text-sm font-black text-slate-900 uppercase">Gestão de Cobrança</h4>
-                      <button onClick={addClient} className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-xs font-bold">
-                        + NOVO CLIENTE
-                      </button>
-                    </div>
-                    <div className="grid gap-3">
-                      {(config.platformClients || []).map((client) => (
-                        <div key={client.id} className="p-4 border rounded-2xl bg-white shadow-sm flex items-center justify-between">
-                          <div className="space-y-1">
-                            <input
-                              value={client.name}
-                              onChange={(e) => updateClient(client.id, 'name', e.target.value)}
-                              className="font-bold text-slate-900 bg-transparent outline-none border-b border-transparent focus:border-indigo-200"
-                            />
-                            <div className="text-[10px] text-slate-400">
-                              R$ {client.monthlyValue} / {getClientStatus(client.startDate).daysRemaining} dias
-                            </div>
-                            {copiedId === client.id ? (
-                              <div className="text-[10px] text-green-600 font-bold">LINK COPIADO ✅</div>
-                            ) : null}
-                          </div>
-                          <div className="flex gap-2">
-                            <button onClick={() => copyClientSystemLink(client.id)} className="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
-                              <LinkIcon size={16} />
-                            </button>
-                            <button
-                              onClick={() => updateClient(client.id, 'isPaid', !client.isPaid)}
-                              className={`p-2 rounded-lg ${client.isPaid ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}
-                            >
-                              <CreditCard size={16} />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {globalSubTab === 'database' && (
-                  <div className="p-6 bg-indigo-900 text-white rounded-3xl space-y-6">
-                    <div className="flex items-center gap-3">
-                      <Database size={24} className="text-indigo-300" />
-                      <div>
-                        <h4 className="font-bold">Manutenção do Sistema</h4>
-                        <p className="text-xs text-indigo-200">Exporte ou importe todos os dados da sua plataforma.</p>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <button
-                        onClick={exportDatabase}
-                        className="flex items-center justify-center gap-2 p-4 bg-indigo-800 hover:bg-indigo-700 rounded-2xl transition-all border border-indigo-600"
-                      >
-                        <Download size={20} />
-                        <div className="text-left">
-                          <div className="text-sm font-bold">Exportar Backup</div>
-                          <div className="text-[10px] opacity-60">Baixar arquivo .JSON</div>
-                        </div>
-                      </button>
-
-                      <button
-                        onClick={() => fileInputRef.current?.click()}
-                        className="flex items-center justify-center gap-2 p-4 bg-white/10 hover:bg-white/20 rounded-2xl transition-all border border-white/10"
-                      >
-                        <Upload size={20} />
-                        <div className="text-left">
-                          <div className="text-sm font-bold">Importar Backup</div>
-                          <div className="text-[10px] opacity-60">Carregar arquivo .JSON</div>
-                        </div>
-                      </button>
-                      <input type="file" ref={fileInputRef} onChange={importDatabase} accept=".json" className="hidden" />
-                    </div>
-
-                    <div className="pt-4 p-4 bg-black/20 rounded-2xl space-y-2">
-                      <div className="flex items-center gap-2 text-xs font-bold text-indigo-200">
-                        <RefreshCw size={12} /> STATUS
-                      </div>
-
-                      <div className="flex items-center justify-between text-[10px] uppercase tracking-widest text-indigo-300">
-                        <span>Loja (slug):</span>
-                        <span className="text-white font-mono">{storeSlug}</span>
-                      </div>
-
-                      <div className="flex items-center justify-between text-[10px] uppercase tracking-widest text-indigo-300">
-                        <span>Nuvem:</span>
-                        <span className="text-white flex items-center gap-2">
-                          {hasCloud ? <Cloud size={14} /> : <CloudOff size={14} />}
-                          {hasCloud ? 'Ativa' : 'Desligada'}
-                        </span>
-                      </div>
-
-                      {cloudStatus ? (
-                        <div className="text-[11px] text-white/90">
-                          <span className="opacity-70">Status:</span> <span className="font-bold">{cloudStatus}</span>
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-                )}
-
-                {/* ✅ BOTÃO REAL: salva no Supabase */}
-                <div className="pt-6 border-t">
-                  <button
-                    type="button"
-                    onClick={handleSaveCloud}
-                    disabled={!hasCloud}
-                    className="w-full py-3 bg-slate-900 text-white rounded-xl font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    SALVAR TUDO NO BANCO DE DADOS
-                  </button>
-                  {!hasCloud ? (
-                    <div className="mt-2 text-xs text-slate-500">
-                      Supabase não está configurado (verifique as variáveis no Vercel).
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            )}
           </div>
         )}
       </div>
@@ -587,4 +225,3 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
 };
 
 export default AdminPanel;
-

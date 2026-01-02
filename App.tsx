@@ -1,23 +1,20 @@
 
-import React, { useEffect, useRef, useState, useMemo } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { createClient } from '@supabase/supabase-js';
 import ScratchCard, { ScratchCardRef } from './components/ScratchCard';
 import AdminPanel from './components/AdminPanel';
 import { Prize, Winner, StoreConfig, AppView } from './types';
 import { INITIAL_PRIZES, INITIAL_CONFIG } from './constants';
 import { generatePrizeMessage } from './services/geminiService';
-import { Ticket, ChevronRight, AlertCircle, ShieldAlert, User, Check } from 'lucide-react';
-import { hasSupabaseEnv, supabase } from './lib/supabase';
+import { Ticket, ChevronRight, AlertCircle, ShieldAlert, User, Check, RefreshCw, DatabaseZap } from 'lucide-react';
 
-// Identifica a "loja" (slug) para carregar/salvar no Supabase.
-// Prioridade: ?store=SLUG  -> subdomínio Netlify -> primeiro segmento do hostname.
+// --- CONFIGURAÇÃO SUPABASE ---
+const SUPABASE_URL = 'https://zhyxwzzcgmuooldwhmvz.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_ahq1ky6QS5sV7UodPjCmJA_HkZvuoWl';
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// UMA ÚNICA LOJA (fixo)
-const getStoreSlug = (): string => "jgraspadinha";
-
-
-// Função utilitária para validação de CPF
-const isValidCPF = (cpf: string): boolean => {
-  const cleanCPF = cpf.replace(/\D/g, '');
+const isValidCPF = (cpf: string = ''): boolean => {
+  const cleanCPF = (cpf || '').replace(/\D/g, '');
   if (cleanCPF.length !== 11 || !!cleanCPF.match(/(\d)\1{10}/)) return false;
   const digits = cleanCPF.split('').map(Number);
   const calculateDigit = (slice: number[]) => {
@@ -33,54 +30,13 @@ const isValidCPF = (cpf: string): boolean => {
   return true;
 };
 
-// Função para obter dados iniciais com prioridade: URL > LocalStorage > Default
-const getInitialData = () => {
-  const params = new URLSearchParams(window.location.search);
-  const sharedData = params.get('s');
-  
-  if (sharedData) {
-    try {
-      // Decodifica os dados da URL
-      const decoded = JSON.parse(decodeURIComponent(escape(atob(sharedData))));
-      return {
-        config: {
-          ...INITIAL_CONFIG,
-          name: decoded.n || INITIAL_CONFIG.name,
-          logoUrl: decoded.l || INITIAL_CONFIG.logoUrl,
-          primaryColor: decoded.c || INITIAL_CONFIG.primaryColor,
-          whatsappNumber: decoded.w || INITIAL_CONFIG.whatsappNumber
-        },
-        prizes: decoded.p || INITIAL_PRIZES,
-        isFromUrl: true
-      };
-    } catch (e) {
-      console.error("Erro ao decodificar link:", e);
-    }
-  }
-  
-  // Se não houver URL, tenta LocalStorage
-  const savedConfig = localStorage.getItem('scratch_config');
-  const savedPrizes = localStorage.getItem('scratch_prizes');
-  
-  return {
-    config: savedConfig ? JSON.parse(savedConfig) : INITIAL_CONFIG,
-    prizes: savedPrizes ? JSON.parse(savedPrizes) : INITIAL_PRIZES,
-    isFromUrl: false
-  };
-};
-
 const App: React.FC = () => {
-  const initialData = getInitialData();
-  const storeSlug = useMemo(() => getStoreSlug(), []);
-  const [cloudStatus, setCloudStatus] = useState<string>('');
-  
   const [view, setView] = useState<AppView>('user-form');
-  const [config, setConfig] = useState<StoreConfig>(initialData.config);
-  const [prizes, setPrizes] = useState<Prize[]>(initialData.prizes);
-  const [winners, setWinners] = useState<Winner[]>(() => {
-    const saved = localStorage.getItem('scratch_winners');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [config, setConfig] = useState<StoreConfig>(INITIAL_CONFIG);
+  const [prizes, setPrizes] = useState<Prize[]>(INITIAL_PRIZES);
+  const [winners, setWinners] = useState<Winner[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [dbError, setDbError] = useState<string | null>(null);
 
   const [currentUser, setCurrentUser] = useState({ name: '', cpf: '' });
   const [cpfError, setCpfError] = useState(false);
@@ -94,98 +50,71 @@ const App: React.FC = () => {
 
   const isClientMode = new URLSearchParams(window.location.search).get('mode') === 'client';
 
-  // Sincronização e Limpeza de URL
-  useEffect(() => {
-    if (initialData.isFromUrl) {
-      // Salva no local storage para futuras visitas sem o parâmetro 's'
-      localStorage.setItem('scratch_config', JSON.stringify(config));
-      localStorage.setItem('scratch_prizes', JSON.stringify(prizes));
+  const fetchData = async () => {
+    try {
+      setLoading(true);
       
-      // Limpa a URL para ficar elegante, mas mantém o modo cliente se necessário
-      const newUrl = window.location.pathname + (isClientMode ? '?mode=client' : '');
-      window.history.replaceState({}, document.title, newUrl);
-    }
-  }, []);
-
-  // Carrega configurações da nuvem (Supabase) para que funcione em qualquer navegador
-  useEffect(() => {
-    const run = async () => {
-      try {
-        if (!hasSupabaseEnv) return;
-        // Se veio de um link compartilhado, mantemos o conteúdo do link.
-        if (initialData.isFromUrl) return;
-
-        setCloudStatus('Carregando da nuvem...');
-
-        const { data, error } = await supabase
-          .from('stores')
-          .select('data, name')
-          .eq('slug', storeSlug)
-          .maybeSingle();
-
-        if (error) {
-          console.warn('Supabase read error:', error);
-          setCloudStatus('Sem acesso para ler (RLS).');
-          return;
+      // 1. Configurações
+      const { data: configData, error: configError } = await supabase
+        .from('scratch_config')
+        .select('*')
+        .maybeSingle();
+      
+      if (configError) {
+        if (configError.code === 'PGRST205') setDbError('Tabelas não encontradas');
+      } else {
+        setDbError(null);
+        if (configData) {
+          // Garantir que whatsappNumber nunca seja nulo
+          setConfig({
+            ...INITIAL_CONFIG,
+            ...configData,
+            whatsappNumber: configData.whatsappNumber || INITIAL_CONFIG.whatsappNumber
+          });
         }
-
-        if (data?.data) {
-          const remote = data.data as any;
-          if (remote.config) setConfig(remote.config);
-          if (remote.prizes) setPrizes(remote.prizes);
-          setCloudStatus('Carregado da nuvem ✅');
-        } else {
-          setCloudStatus('Nenhum registro na nuvem (usando local).');
-        }
-      } catch (e) {
-        console.warn('Supabase load error:', e);
-        setCloudStatus('Erro ao carregar da nuvem.');
       }
-    };
-    run();
-  }, [storeSlug]);
 
-  const saveToCloud = async () => {
-    if (!hasSupabaseEnv) {
-      setCloudStatus('Supabase não configurado (variáveis de ambiente).');
-      return;
+      // 2. Prêmios
+      const { data: prizesData } = await supabase
+        .from('scratch_prizes')
+        .select('*')
+        .order('id', { ascending: true });
+      
+      if (prizesData && prizesData.length > 0) {
+        setPrizes(prizesData);
+      }
+
+      // 3. Ganhadores
+      const { data: winnersData } = await supabase
+        .from('scratch_winners')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (winnersData) {
+        setWinners(winnersData);
+      }
+
+    } catch (e) {
+      console.error("Fetch Error:", e);
+    } finally {
+      setLoading(false);
     }
-
-    setCloudStatus('Salvando na nuvem...');
-
-    const payload = { config, prizes };
-    const { error } = await supabase
-      .from('stores')
-      .upsert(
-        {
-          slug: storeSlug,
-          name: config?.name ?? null,
-          data: payload,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'slug' }
-      );
-
-    if (error) {
-      console.warn('Supabase write error:', error);
-      setCloudStatus('Sem permissão para salvar (RLS).');
-      return;
-    }
-    setCloudStatus('Salvo na nuvem ✅');
   };
 
-  // Persistência Reativa
   useEffect(() => {
-    localStorage.setItem('scratch_config', JSON.stringify(config));
-  }, [config]);
+    fetchData();
 
-  useEffect(() => {
-    localStorage.setItem('scratch_prizes', JSON.stringify(prizes));
-  }, [prizes]);
+    const channel = supabase
+      .channel('schema-db-changes')
+      .on('postgres_changes', { event: '*', schema: 'public' }, () => {
+        fetchData();
+      })
+      .subscribe();
 
-  useEffect(() => {
-    localStorage.setItem('scratch_winners', JSON.stringify(winners));
-  }, [winners]);
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   const startScratch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -194,10 +123,13 @@ const App: React.FC = () => {
     if (!isValidCPF(currentUser.cpf)) { setCpfError(true); return; }
     
     const today = new Date().toLocaleDateString('pt-BR');
-    const hasPlayedToday = winners.some(w => w.userCpf === currentUser.cpf && w.date.split(',')[0].trim() === today);
+    const hasPlayedToday = winners.some(w => {
+      if (!w.userCpf || !w.date) return false;
+      return w.userCpf === currentUser.cpf && (w.date || '').split(',')[0].trim() === today;
+    });
     
     if (hasPlayedToday) { 
-      alert("Válido apenas uma vez por CPF hoje! Tente novamente amanhã."); 
+      alert("Você já participou hoje! Volte amanhã para tentar a sorte novamente."); 
       return; 
     }
 
@@ -212,72 +144,68 @@ const App: React.FC = () => {
     generatePrizeMessage(randomPrize.name, randomPrize.isWinning).then(setAiMessage);
   };
 
-  const handleRevealComplete = () => {
+  const handleRevealComplete = async () => {
     if (currentPrize && !isRevealed) {
-      const newWinner: Winner = { 
-        id: Date.now().toString(), 
+      const newWinner = { 
         userName: currentUser.name, 
         userCpf: currentUser.cpf, 
         prizeName: currentPrize.name, 
         prizeCode: prizeCode, 
         date: new Date().toLocaleString('pt-BR') 
       };
-      setWinners(prev => [...prev, newWinner]);
+
+      const { error } = await supabase.from('scratch_winners').insert([newWinner]);
+      
+      if (error) {
+        console.error("Erro ao salvar:", error);
+      }
+      
       setIsRevealed(true);
     }
   };
 
   const shareApp = async () => {
-    // Captura o estado atual exato para o link
-    const stateToShare = { 
-      n: config.name, 
-      l: config.logoUrl, 
-      c: config.primaryColor, 
-      w: config.whatsappNumber, 
-      p: prizes 
-    };
-    
-    const encodedData = btoa(unescape(encodeURIComponent(JSON.stringify(stateToShare))));
     const baseUrl = window.location.href.split('?')[0];
-    const finalUrl = `${baseUrl}?mode=client&s=${encodedData}`;
-    
-    const shareText = `🎟️ Raspadinha da ${config.name}\n\nTente a sorte e ganhe prêmios exclusivos! 🎁\n\nLink: ${finalUrl}`;
+    const finalUrl = `${baseUrl}?mode=client`;
+    const shareText = `🎟️ Raspadinha da ${config.name}\n\nTente a sorte agora e ganhe prêmios! 🎁\n\nLink: ${finalUrl}`;
     
     try {
       await navigator.clipboard.writeText(shareText);
       setIsCopied(true);
       setTimeout(() => setIsCopied(false), 3000);
     } catch (err) {
-      console.error("Erro ao copiar link:", err);
+      console.error(err);
     }
   };
 
-  const openWhatsAppLead = () => {
-    const phone = (config.adminContactNumber || '5564993408657').replace(/\D/g, '');
-    const storeName = config.name || 'minha loja';
-    const msg = `Olá! Vi a raspadinha da loja "${storeName}" e quero fazer a minha. Pode me ajudar?`;
-    const url = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
-    window.open(url, '_blank', 'noopener,noreferrer');
-  };
+  const whatsappLink = `https://wa.me/${(config.whatsappNumber || '').replace(/\D/g, '')}?text=${encodeURIComponent(`🎟️ RESGATE - ${config.name}\n👤 Cliente: ${currentUser.name}\n📄 CPF: ${currentUser.cpf}\n🎁 Prêmio: ${currentPrize?.name}\n🔑 Código: ${prizeCode}`)}`;
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-950 text-white gap-4">
+        <RefreshCw className="animate-spin text-indigo-500" size={48} />
+        <p className="text-slate-400 font-bold animate-pulse">Sincronizando com o Banco...</p>
+      </div>
+    );
+  }
 
   if (view === 'admin') {
     return (
       <div className="p-4 md:p-10 max-w-5xl mx-auto">
         <button onClick={() => setView('user-form')} className="mb-6 flex items-center gap-2 text-slate-400 hover:text-white group transition-colors">
           <div className="p-2 rounded-full bg-slate-800 group-hover:bg-slate-700"><ChevronRight className="rotate-180" size={16} /></div>
-          <span className="font-bold text-sm">Voltar</span>
+          <span className="font-bold text-sm">Sair do Admin</span>
         </button>
-        <AdminPanel
-          config={config}
-          setConfig={setConfig}
-          prizes={prizes}
-          setPrizes={setPrizes}
-          winners={winners}
-          onBack={() => setView('user-form')}
-          hasCloud={hasSupabaseEnv}
-          cloudStatus={cloudStatus}
-          onSaveCloud={saveToCloud}
-          storeSlug={storeSlug}
+        <AdminPanel 
+          supabase={supabase}
+          config={config} 
+          setConfig={setConfig} 
+          prizes={prizes} 
+          setPrizes={setPrizes} 
+          winners={winners} 
+          fetchData={fetchData}
+          dbError={dbError}
+          onBack={() => setView('user-form')} 
         />
       </div>
     );
@@ -294,7 +222,7 @@ const App: React.FC = () => {
             </h1>
           </div>
           <p className="text-[11px] text-slate-400 leading-tight">
-            1 chance por CPF por dia • raspe para revelar • depois clique em <span className="font-bold text-slate-200">Quero resgatar</span>.
+            Válido para 1 participação diária por CPF. Raspe até o fim e resgate no WhatsApp.
           </p>
         </header>
 
@@ -302,20 +230,20 @@ const App: React.FC = () => {
           <form onSubmit={startScratch} className="space-y-4">
             <div className="space-y-4">
               <div className="space-y-1.5">
-                <label className="text-xs text-slate-400">Nome Completo</label>
+                <label className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Nome Completo</label>
                 <input 
                   disabled={isScratchingActive} 
                   required 
                   type="text" 
                   value={currentUser.name} 
                   onChange={e => setCurrentUser({...currentUser, name: e.target.value})} 
-                  className="custom-input w-full px-4 py-3 rounded-xl outline-none focus:border-indigo-500/50 transition-all placeholder:text-slate-700" 
-                  placeholder="Seu nome" 
+                  className="custom-input w-full px-4 py-3 rounded-xl outline-none transition-all font-medium" 
+                  placeholder="Seu Nome" 
                 />
               </div>
               <div className="space-y-1.5">
                 <div className="flex justify-between">
-                  <label className="text-xs text-slate-400">CPF</label>
+                  <label className="text-xs text-slate-400 font-semibold uppercase tracking-wider">CPF</label>
                   {cpfError && <span className="text-[10px] text-red-500 flex items-center gap-1 font-bold animate-pulse"><AlertCircle size={10} /> INVÁLIDO</span>}
                 </div>
                 <input 
@@ -325,19 +253,20 @@ const App: React.FC = () => {
                   maxLength={11} 
                   value={currentUser.cpf} 
                   onChange={e => { 
-                    setCurrentUser({...currentUser, cpf: e.target.value.replace(/\D/g, '')}); 
+                    setCurrentUser({...currentUser, cpf: (e.target.value || '').replace(/\D/g, '')}); 
                     if(cpfError) setCpfError(false); 
                   }} 
-                  className={`custom-input w-full px-4 py-3 rounded-xl outline-none transition-all placeholder:text-slate-700 ${cpfError ? 'border-red-500 ring-1 ring-red-500/20' : 'focus:border-indigo-500/50'}`} 
-                  placeholder="12345678901" 
+                  className={`custom-input w-full px-4 py-3 rounded-xl outline-none transition-all font-medium ${cpfError ? 'border-red-500 ring-1 ring-red-500/20' : ''}`} 
+                  placeholder="000.000.000-00" 
                 />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <button type="submit" disabled={isScratchingActive} className={`py-3 rounded-xl font-bold text-sm custom-button ${isScratchingActive ? 'opacity-50' : 'text-slate-400 active:scale-95'}`}>Começar</button>
-              <button type="button" onClick={() => {setCurrentUser({ name: '', cpf: '' }); setCpfError(false); setIsScratchingActive(false); setIsRevealed(false); setCurrentPrize(null);}} className="py-3 rounded-xl font-bold text-sm custom-button text-slate-400 active:scale-95">Limpar</button>
+              <button type="submit" disabled={isScratchingActive} className={`py-3 rounded-xl font-bold text-sm custom-button flex items-center justify-center gap-2 ${isScratchingActive ? 'opacity-50' : 'text-white bg-indigo-600 border-indigo-500 active:scale-95'}`}>
+                {isScratchingActive ? 'Em jogo...' : 'Começar Agora'}
+              </button>
+              <button type="button" onClick={() => {setCurrentUser({ name: '', cpf: '' }); setCpfError(false); setIsScratchingActive(false); setIsRevealed(false); setCurrentPrize(null);}} className="py-3 rounded-xl font-bold text-sm custom-button text-slate-400 active:scale-95">Limpar Tudo</button>
             </div>
-            {isClientMode && <div className="w-full py-2 flex items-center justify-center gap-2 opacity-30 select-none"><ShieldAlert size={12} className="text-slate-500" /><span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Acesso Restrito</span></div>}
           </form>
         </div>
 
@@ -346,16 +275,16 @@ const App: React.FC = () => {
             <ScratchCard ref={scratchCardRef} prize={currentPrize} onComplete={handleRevealComplete} primaryColor={config.primaryColor} />
           ) : (
             <div className="w-full aspect-video bg-slate-900/50 rounded-xl flex items-center justify-center border border-dashed border-slate-700">
-              <span className="text-slate-600 font-bold uppercase tracking-widest text-sm">Aguardando dados...</span>
+              <span className="text-slate-600 font-bold uppercase tracking-widest text-xs text-center px-6">Preencha seus dados para começar a raspar</span>
             </div>
           )}
         </div>
 
         <div className="grid grid-cols-3 gap-2">
           <button 
-            onClick={() => window.open(`https://wa.me/${config.whatsappNumber.replace(/\D/g, '')}?text=${encodeURIComponent(`🎟️ RESGATE - ${config.name}\n👤 Cliente: ${currentUser.name}\n📄 CPF: ${currentUser.cpf}\n🎁 Prêmio: ${currentPrize?.name}\n🔑 Código: ${prizeCode}`)}`, '_blank')} 
+            onClick={() => window.open(whatsappLink, '_blank')} 
             disabled={!isRevealed || !currentPrize?.isWinning} 
-            className={`py-3.5 rounded-xl text-[10px] font-bold uppercase custom-button ${(!isRevealed || !currentPrize?.isWinning) ? 'opacity-40 grayscale' : 'text-slate-200 active:scale-95'}`}
+            className={`py-3.5 rounded-xl text-[10px] font-bold uppercase custom-button ${(!isRevealed || !currentPrize?.isWinning) ? 'opacity-40 grayscale' : 'text-slate-200 active:scale-95 bg-green-600 border-green-500'}`}
           >
             Quero resgatar
           </button>
@@ -376,27 +305,18 @@ const App: React.FC = () => {
         </div>
 
         {isRevealed && aiMessage && (
-          <div className="text-center animate-in fade-in slide-in-from-top-2 duration-700">
-            <p className="text-xs text-indigo-400 italic">"{aiMessage}"</p>
+          <div className="text-center animate-in fade-in slide-in-from-top-2 duration-700 py-2">
+            <p className="text-sm text-indigo-400 italic font-medium leading-relaxed">"{aiMessage}"</p>
           </div>
         )}
-
-        {/* CTA para revenda */}
-        <button
-          onClick={openWhatsAppLead}
-          className="w-full py-3.5 rounded-xl text-[11px] font-bold uppercase custom-button text-slate-200 active:scale-95"
-        >
-          Quero fazer minha própria raspadinha
-        </button>
       </div>
 
-      {/* Ícone de Admin Discreto (Boneco) */}
       {!isClientMode && (
         <button 
           onClick={() => setView('admin')} 
-          className="fixed bottom-6 right-6 p-2.5 rounded-full bg-slate-800/30 text-slate-700 hover:text-slate-300 hover:bg-slate-800/70 transition-all shadow-lg backdrop-blur-sm opacity-25 hover:opacity-100"
+          className="fixed bottom-6 right-6 p-3 rounded-full bg-slate-800/60 text-slate-400 hover:text-white hover:bg-slate-800 transition-all shadow-xl backdrop-blur-md border border-slate-700"
         >
-          <User size={18} />
+          <User size={20} />
         </button>
       )}
     </div>
