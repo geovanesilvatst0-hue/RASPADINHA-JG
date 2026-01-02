@@ -7,17 +7,18 @@ interface ScratchCardProps {
   prize: Prize;
   onComplete: () => void;
   primaryColor: string;
+  initialRevealed?: boolean;
 }
 
 export interface ScratchCardRef {
   reveal: () => void;
 }
 
-const ScratchCard = forwardRef<ScratchCardRef, ScratchCardProps>(({ prize, onComplete, primaryColor }, ref) => {
+const ScratchCard = forwardRef<ScratchCardRef, ScratchCardProps>(({ prize, onComplete, primaryColor, initialRevealed = false }, ref) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
-  const [revealed, setRevealed] = useState(false);
+  const [revealed, setRevealed] = useState(initialRevealed);
 
   useImperativeHandle(ref, () => ({
     reveal: () => {
@@ -29,7 +30,7 @@ const ScratchCard = forwardRef<ScratchCardRef, ScratchCardProps>(({ prize, onCom
   const initCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     const container = containerRef.current;
-    if (!canvas || !container) return;
+    if (!canvas || !container || revealed) return;
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -53,7 +54,7 @@ const ScratchCard = forwardRef<ScratchCardRef, ScratchCardProps>(({ prize, onCom
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('RASPE AQUI', canvas.width / 2, canvas.height / 2);
-  }, []);
+  }, [revealed]);
 
   useEffect(() => {
     initCanvas();

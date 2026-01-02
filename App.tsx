@@ -6,7 +6,7 @@ import AdminPanel from './components/AdminPanel';
 import { Prize, Winner, StoreConfig, AppView } from './types';
 import { INITIAL_PRIZES, INITIAL_CONFIG } from './constants';
 import { generatePrizeMessage } from './services/geminiService';
-import { Ticket, ChevronRight, AlertCircle, ShieldAlert, User, Check, RefreshCw, DatabaseZap, Loader2 } from 'lucide-react';
+import { Ticket, ChevronRight, AlertCircle, User, Check, RefreshCw, Loader2, PartyPopper } from 'lucide-react';
 
 const SUPABASE_URL = 'https://zhyxwzzcgmuooldwhmvz.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_ahq1ky6QS5sV7UodPjCmJA_HkZvuoWl';
@@ -47,10 +47,12 @@ const App: React.FC = () => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncCountdown, setSyncCountdown] = useState(8);
   const [isCopied, setIsCopied] = useState(false);
+  const [isRedeemed, setIsRedeemed] = useState(false);
   const scratchCardRef = useRef<ScratchCardRef>(null);
 
   const isClientMode = new URLSearchParams(window.location.search).get('mode') === 'client';
 
+  // Carregar dados e recuperar estado do localStorage
   const fetchData = async () => {
     try {
       setLoading(true);
@@ -89,6 +91,19 @@ const App: React.FC = () => {
       if (winnersData) {
         setWinners(winnersData);
       }
+
+      // Recuperar sessão salva
+      const savedSession = localStorage.getItem('scratch_session');
+      if (savedSession) {
+        const session = JSON.parse(savedSession);
+        setCurrentUser(session.user);
+        setCurrentPrize(session.prize);
+        setPrizeCode(session.code);
+        setIsRevealed(session.revealed);
+        setIsScratchingActive(true);
+        if (session.aiMessage) setAiMessage(session.aiMessage);
+      }
+
     } catch (e) {
       console.error("Fetch Error:", e);
     } finally {
@@ -108,6 +123,20 @@ const App: React.FC = () => {
       supabase.removeChannel(channel);
     };
   }, []);
+
+  // Salvar estado no localStorage sempre que mudar
+  useEffect(() => {
+    if (isScratchingActive && currentPrize) {
+      const session = {
+        user: currentUser,
+        prize: currentPrize,
+        code: prizeCode,
+        revealed: isRevealed,
+        aiMessage: aiMessage
+      };
+      localStorage.setItem('scratch_session', JSON.stringify(session));
+    }
+  }, [isScratchingActive, currentPrize, isRevealed, currentUser, prizeCode, aiMessage]);
 
   useEffect(() => {
     let timer: number;
@@ -147,6 +176,7 @@ const App: React.FC = () => {
     setIsScratchingActive(true);
     setIsRevealed(false);
     setIsSyncing(false);
+    setIsRedeemed(false);
     setSyncCountdown(8);
     generatePrizeMessage(randomPrize.name, randomPrize.iswinning).then(setAiMessage);
   };
@@ -176,6 +206,28 @@ const App: React.FC = () => {
       setIsSyncing(false);
       setIsRevealed(true);
     }
+  };
+
+  const handleRedeem = () => {
+    window.open(whatsappLink, '_blank');
+    setIsRedeemed(true);
+    // Remove do localStorage para permitir nova sessão limpa no futuro
+    localStorage.removeItem('scratch_session');
+  };
+
+  const resetAll = () => {
+    if (isRevealed && currentPrize?.iswinning && !isRedeemed) {
+      if (!confirm("Você tem um prêmio vencedor pendente! Tem certeza que deseja limpar?")) return;
+    }
+    localStorage.removeItem('scratch_session');
+    setCurrentUser({ name: '', cpf: '' });
+    setCpfError(false);
+    setIsScratchingActive(false);
+    setIsRevealed(false);
+    setIsSyncing(false);
+    setIsRedeemed(false);
+    setCurrentPrize(null);
+    setAiMessage('');
   };
 
   const shareApp = async () => {
@@ -279,14 +331,14 @@ const App: React.FC = () => {
               <button type="submit" disabled={isScratchingActive} className={`py-3 rounded-xl font-bold text-sm custom-button flex items-center justify-center gap-2 ${isScratchingActive ? 'opacity-50' : 'text-white bg-indigo-600 border-indigo-500 active:scale-95'}`}>
                 {isScratchingActive ? 'Em jogo...' : 'Começar Agora'}
               </button>
-              <button type="button" onClick={() => {setCurrentUser({ name: '', cpf: '' }); setCpfError(false); setIsScratchingActive(false); setIsRevealed(false); setIsSyncing(false); setCurrentPrize(null);}} className="py-3 rounded-xl font-bold text-sm custom-button text-slate-400 active:scale-95">Limpar Tudo</button>
+              <button type="button" onClick={resetAll} className="py-3 rounded-xl font-bold text-sm custom-button text-slate-400 active:scale-95">Limpar Tudo</button>
             </div>
           </form>
         </div>
 
         <div className="scratch-container rounded-2xl p-4">
           {isScratchingActive && currentPrize ? (
-            <ScratchCard ref={scratchCardRef} prize={currentPrize} onComplete={handleRevealComplete} primaryColor={config.primaryColor} />
+            <ScratchCard ref={scratchCardRef} prize={currentPrize} onComplete={handleRevealComplete} primaryColor={config.primaryColor} initialRevealed={isRevealed} />
           ) : (
             <div className="w-full aspect-video bg-slate-900/50 rounded-xl flex items-center justify-center border border-dashed border-slate-700">
               <span className="text-slate-600 font-bold uppercase tracking-widest text-xs text-center px-6">Preencha seus dados para começar a raspar</span>
@@ -296,11 +348,11 @@ const App: React.FC = () => {
 
         <div className="grid grid-cols-3 gap-2">
           <button 
-            onClick={() => window.open(whatsappLink, '_blank')} 
+            onClick={handleRedeem} 
             disabled={!isRevealed || !currentPrize?.iswinning} 
-            className={`py-3.5 rounded-xl text-[10px] font-bold uppercase custom-button ${(!isRevealed || !currentPrize?.iswinning) ? 'opacity-40 grayscale' : 'text-slate-200 active:scale-95 bg-green-600 border-green-500'}`}
+            className={`py-3.5 rounded-xl text-[10px] font-bold uppercase custom-button ${(!isRevealed || !currentPrize?.iswinning) ? 'opacity-40 grayscale' : 'text-slate-200 active:scale-95 bg-green-600 border-green-500 shadow-lg shadow-green-900/20'}`}
           >
-            Quero resgatar
+            {isRedeemed ? 'Resgatado!' : 'Quero resgatar'}
           </button>
           <button 
             onClick={shareApp} 
@@ -328,7 +380,14 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {(isRevealed || isSyncing) && aiMessage && (
+        {isRedeemed && (
+          <div className="bg-green-600/10 border border-green-500/20 rounded-xl p-4 flex flex-col items-center gap-2 animate-in zoom-in duration-500">
+            <PartyPopper className="text-green-500" size={24} />
+            <p className="text-center text-xs font-bold text-green-400 uppercase leading-relaxed">Parabéns! Seu resgate foi solicitado via WhatsApp. Apresente o código no balcão!</p>
+          </div>
+        )}
+
+        {(isRevealed || isSyncing) && aiMessage && !isRedeemed && (
           <div className="text-center animate-in fade-in slide-in-from-top-2 duration-700 py-2">
             <p className="text-sm text-indigo-400 italic font-medium leading-relaxed">"{aiMessage}"</p>
           </div>
