@@ -6,6 +6,21 @@ import { Prize, Winner, StoreConfig, AppView } from './types';
 import { INITIAL_PRIZES, INITIAL_CONFIG } from './constants';
 import { generatePrizeMessage } from './services/geminiService';
 import { Ticket, ChevronRight, AlertCircle, ShieldAlert, User, Check } from 'lucide-react';
+import { hasSupabaseEnv, supabase } from './lib/supabase';
+
+// Identifica a "loja" (slug) para carregar/salvar no Supabase.
+// Prioridade: ?store=SLUG  -> subdomínio Netlify -> primeiro segmento do hostname.
+const getStoreSlug = (): string => {
+  const params = new URLSearchParams(window.location.search);
+  const fromParam = params.get('store');
+  if (fromParam) return fromParam;
+
+  const host = window.location.hostname;
+  if (host.endsWith('.netlify.app')) return host.replace('.netlify.app', '');
+
+  const first = host.split('.')[0];
+  return first || 'default';
+};
 
 // Função utilitária para validação de CPF
 const isValidCPF = (cpf: string): boolean => {
@@ -63,6 +78,8 @@ const getInitialData = () => {
 
 const App: React.FC = () => {
   const initialData = getInitialData();
+  const storeSlug = useMemo(() => getStoreSlug(), []);
+  const [cloudStatus, setCloudStatus] = useState<string>('');
   
   const [view, setView] = useState<AppView>('user-form');
   const [config, setConfig] = useState<StoreConfig>(initialData.config);
@@ -96,6 +113,73 @@ const App: React.FC = () => {
       window.history.replaceState({}, document.title, newUrl);
     }
   }, []);
+
+  // Carrega configurações da nuvem (Supabase) para que funcione em qualquer navegador
+  useEffect(() => {
+    const run = async () => {
+      try {
+        if (!hasSupabaseEnv) return;
+        // Se veio de um link compartilhado, mantemos o conteúdo do link.
+        if (initialData.isFromUrl) return;
+
+        setCloudStatus('Carregando da nuvem...');
+
+        const { data, error } = await supabase
+          .from('stores')
+          .select('data, name')
+          .eq('slug', storeSlug)
+          .maybeSingle();
+
+        if (error) {
+          console.warn('Supabase read error:', error);
+          setCloudStatus('Sem acesso para ler (RLS).');
+          return;
+        }
+
+        if (data?.data) {
+          const remote = data.data as any;
+          if (remote.config) setConfig(remote.config);
+          if (remote.prizes) setPrizes(remote.prizes);
+          setCloudStatus('Carregado da nuvem ✅');
+        } else {
+          setCloudStatus('Nenhum registro na nuvem (usando local).');
+        }
+      } catch (e) {
+        console.warn('Supabase load error:', e);
+        setCloudStatus('Erro ao carregar da nuvem.');
+      }
+    };
+    run();
+  }, [storeSlug]);
+
+  const saveToCloud = async () => {
+    if (!hasSupabaseEnv) {
+      setCloudStatus('Supabase não configurado (variáveis de ambiente).');
+      return;
+    }
+
+    setCloudStatus('Salvando na nuvem...');
+
+    const payload = { config, prizes };
+    const { error } = await supabase
+      .from('stores')
+      .upsert(
+        {
+          slug: storeSlug,
+          name: config?.name ?? null,
+          data: payload,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'slug' }
+      );
+
+    if (error) {
+      console.warn('Supabase write error:', error);
+      setCloudStatus('Sem permissão para salvar (RLS).');
+      return;
+    }
+    setCloudStatus('Salvo na nuvem ✅');
+  };
 
   // Persistência Reativa
   useEffect(() => {
@@ -175,6 +259,14 @@ const App: React.FC = () => {
     }
   };
 
+  const openWhatsAppLead = () => {
+    const phone = (config.adminContactNumber || '5564993408657').replace(/\D/g, '');
+    const storeName = config.name || 'minha loja';
+    const msg = `Olá! Vi a raspadinha da loja "${storeName}" e quero fazer a minha. Pode me ajudar?`;
+    const url = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
   if (view === 'admin') {
     return (
       <div className="p-4 md:p-10 max-w-5xl mx-auto">
@@ -182,7 +274,18 @@ const App: React.FC = () => {
           <div className="p-2 rounded-full bg-slate-800 group-hover:bg-slate-700"><ChevronRight className="rotate-180" size={16} /></div>
           <span className="font-bold text-sm">Voltar</span>
         </button>
-        <AdminPanel config={config} setConfig={setConfig} prizes={prizes} setPrizes={setPrizes} winners={winners} onBack={() => setView('user-form')} />
+        <AdminPanel
+          config={config}
+          setConfig={setConfig}
+          prizes={prizes}
+          setPrizes={setPrizes}
+          winners={winners}
+          onBack={() => setView('user-form')}
+          hasCloud={hasSupabaseEnv}
+          cloudStatus={cloudStatus}
+          onSaveCloud={saveToCloud}
+          storeSlug={storeSlug}
+        />
       </div>
     );
   }
@@ -284,13 +387,21 @@ const App: React.FC = () => {
             <p className="text-xs text-indigo-400 italic">"{aiMessage}"</p>
           </div>
         )}
+
+        {/* CTA para revenda */}
+        <button
+          onClick={openWhatsAppLead}
+          className="w-full py-3.5 rounded-xl text-[11px] font-bold uppercase custom-button text-slate-200 active:scale-95"
+        >
+          Quero fazer minha própria raspadinha
+        </button>
       </div>
 
       {/* Ícone de Admin Discreto (Boneco) */}
       {!isClientMode && (
         <button 
           onClick={() => setView('admin')} 
-          className="fixed bottom-6 right-6 p-3 rounded-full bg-slate-800/40 text-slate-600 hover:text-slate-400 hover:bg-slate-800 transition-all shadow-lg backdrop-blur-sm"
+          className="fixed bottom-6 right-6 p-2.5 rounded-full bg-slate-800/30 text-slate-700 hover:text-slate-300 hover:bg-slate-800/70 transition-all shadow-lg backdrop-blur-sm opacity-25 hover:opacity-100"
         >
           <User size={18} />
         </button>

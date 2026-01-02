@@ -14,7 +14,8 @@ export const INITIAL_CONFIG: StoreConfig = {
   primaryColor: '#4f46e5',
   whatsappNumber: '5511999999999',
   adminPassword: 'admin',
-  adminContactNumber: '5511999999999',
+  // Número que receberá os leads do botão "Quero fazer minha própria raspadinha"
+  adminContactNumber: '5564993408657',
   globalAdminPassword: '123', // Senha inicial solicitada
   platformClients: [],
 };
