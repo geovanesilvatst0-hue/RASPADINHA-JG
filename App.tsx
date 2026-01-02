@@ -10,7 +10,10 @@ import { hasSupabaseEnv, supabase } from './lib/supabase';
 
 // Identifica a "loja" (slug) para carregar/salvar no Supabase.
 // Prioridade: ?store=SLUG  -> subdomínio Netlify -> primeiro segmento do hostname.
+
 const getStoreSlug = (): string => {
+  return "default";
+};
   const params = new URLSearchParams(window.location.search);
   const fromParam = params.get("store");
   if (fromParam) return fromParam;
