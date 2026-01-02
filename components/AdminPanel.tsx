@@ -1,7 +1,8 @@
+
 import React, { useState } from 'react';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { StoreConfig, Prize, Winner } from '../types';
-import { Settings, Gift, LayoutDashboard, Plus, Trash2, Key, Check, Eye, EyeOff, Database, RefreshCw, AlertTriangle } from 'lucide-react';
+import { Settings, Gift, LayoutDashboard, Plus, Trash2, Key, Check, Eye, EyeOff, Database, RefreshCw, AlertTriangle, Terminal } from 'lucide-react';
 
 interface AdminPanelProps {
   supabase: SupabaseClient;
@@ -24,7 +25,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ supabase, config, setConfig, pr
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (passwordInput === (config.adminPassword || 'admin') || passwordInput === 'admin' || passwordInput === 'admin123' || passwordInput === '123') {
+    const adminPass = config.adminPassword || 'admin';
+    const globalPass = config.globalAdminPassword || '123';
+    
+    if (passwordInput === adminPass || passwordInput === globalPass || passwordInput === 'admin123') {
       setIsAuthenticated(true);
     } else {
       alert('Senha incorreta!');
@@ -33,9 +37,22 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ supabase, config, setConfig, pr
 
   const syncConfig = async () => {
     setSaveStatus('saving');
-    const { error } = await supabase.from('scratch_config').upsert({ id: 1, ...config });
+    // Filtramos apenas os campos que temos certeza que existem no banco para evitar erros de cache
+    const payload = {
+      id: 1,
+      name: config.name,
+      whatsappNumber: config.whatsappNumber,
+      adminPassword: config.adminPassword,
+      primaryColor: config.primaryColor,
+      logoUrl: config.logoUrl,
+      adminContactNumber: config.adminContactNumber,
+      globalAdminPassword: config.globalAdminPassword
+    };
+
+    const { error } = await supabase.from('scratch_config').upsert(payload);
+    
     if (error) {
-      alert(`Erro: ${error.message}`);
+      alert(`Erro ao salvar: ${error.message}\n\nCertifique-se de que executou o comando SQL de reparo.`);
       setSaveStatus('idle');
     } else {
       setSaveStatus('saved');
@@ -45,8 +62,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ supabase, config, setConfig, pr
 
   const syncPrizes = async (newPrizes: Prize[]) => {
     setSaveStatus('saving');
-    // Deleta os prêmios antigos
-    await supabase.from('scratch_prizes').delete().neq('id', 'xpto_nao_existente');
+    await supabase.from('scratch_prizes').delete().neq('id', 'xpto_system_id');
     const { error } = await supabase.from('scratch_prizes').insert(newPrizes);
     
     if (error) {
@@ -67,13 +83,55 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ supabase, config, setConfig, pr
     setPrizes(prizes.filter(p => p.id !== id));
   };
 
+  // Script completo para o usuário copiar em caso de erro de coluna
+  const sqlRepair = `-- SCRIPT DE REPARO COMPLETO
+CREATE TABLE IF NOT EXISTS public.scratch_config (
+  id bigint PRIMARY KEY DEFAULT 1,
+  name text DEFAULT 'Minha Loja',
+  "whatsappNumber" text DEFAULT '5500000000000',
+  "adminPassword" text DEFAULT 'admin',
+  "primaryColor" text DEFAULT '#4f46e5',
+  "logoUrl" text DEFAULT 'https://cdn-icons-png.flaticon.com/512/606/606547.png',
+  "adminContactNumber" text DEFAULT '5500000000000',
+  "globalAdminPassword" text DEFAULT '123',
+  created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- Adicionar colunas caso a tabela já exista mas esteja incompleta
+ALTER TABLE public.scratch_config ADD COLUMN IF NOT EXISTS "adminContactNumber" text;
+ALTER TABLE public.scratch_config ADD COLUMN IF NOT EXISTS "globalAdminPassword" text;
+
+INSERT INTO public.scratch_config (id, name) VALUES (1, 'Minha Loja') ON CONFLICT (id) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS public.scratch_prizes (
+  id text PRIMARY KEY,
+  name text NOT NULL,
+  description text,
+  "isWinning" boolean DEFAULT true,
+  created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS public.scratch_winners (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  "userName" text NOT NULL,
+  "userCpf" text NOT NULL,
+  "prizeName" text NOT NULL,
+  "prizeCode" text NOT NULL,
+  date text NOT NULL,
+  created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+ALTER PUBLICATION supabase_realtime ADD TABLE public.scratch_config;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.scratch_prizes;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.scratch_winners;`;
+
   if (!isAuthenticated) {
     return (
       <div className="max-w-md mx-auto bg-slate-900 p-8 rounded-3xl shadow-2xl border border-slate-800">
         <div className="text-center mb-8">
           <Key className="w-12 h-12 text-indigo-500 mx-auto mb-4" />
-          <h2 className="text-2xl font-black text-white uppercase tracking-tight">Acesso Restrito</h2>
-          <p className="text-slate-400 text-sm mt-1">Insira a senha do painel</p>
+          <h2 className="text-2xl font-black text-white uppercase tracking-tight">Painel Admin</h2>
+          <p className="text-slate-400 text-sm mt-1">Insira a senha de acesso</p>
         </div>
         <form onSubmit={handleLogin} className="space-y-4">
           <div className="relative">
@@ -82,14 +140,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ supabase, config, setConfig, pr
               value={passwordInput} 
               onChange={e => setPasswordInput(e.target.value)} 
               className="w-full p-4 pr-12 bg-slate-950 border border-slate-700 rounded-xl outline-none text-white font-medium focus:border-indigo-500" 
-              placeholder="Senha Admin" 
+              placeholder="Senha" 
             />
             <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500">
               {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
             </button>
           </div>
           <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-4 rounded-xl font-bold uppercase text-sm shadow-lg transition-all active:scale-95">
-            ENTRAR
+            ENTRAR NO PAINEL
           </button>
         </form>
       </div>
@@ -98,10 +156,32 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ supabase, config, setConfig, pr
 
   return (
     <div className="bg-slate-900 rounded-3xl shadow-2xl overflow-hidden border border-slate-800">
-      {dbError && (
-        <div className="bg-amber-500/10 border-b border-amber-500/20 p-4 flex items-center gap-3 text-amber-500 text-xs">
-          <AlertTriangle size={18} />
-          <span>O banco de dados ainda não está configurado. Verifique o console ou execute o SQL.</span>
+      {(dbError || saveStatus === 'idle') && (
+        <div className="bg-amber-500/10 border-b border-amber-500/20 p-6">
+          <div className="flex items-start gap-4">
+            <div className="p-3 bg-amber-500/20 rounded-xl text-amber-500">
+              <AlertTriangle size={24} />
+            </div>
+            <div className="flex-1">
+              <h4 className="text-amber-500 font-bold text-sm uppercase mb-1">Aviso de Estrutura</h4>
+              <p className="text-amber-500/70 text-xs leading-relaxed mb-4">
+                Se você vir erros de "column not found", execute o script SQL abaixo no seu Supabase:
+              </p>
+              <div className="relative">
+                <textarea 
+                  readOnly 
+                  className="w-full h-24 bg-slate-950 border border-slate-800 rounded-xl p-3 font-mono text-[9px] text-slate-500 outline-none"
+                  value={sqlRepair}
+                />
+                <button 
+                  onClick={() => { navigator.clipboard.writeText(sqlRepair); alert('Copiado!'); }}
+                  className="absolute bottom-2 right-2 bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1 rounded-lg text-[9px] font-bold flex items-center gap-1.5"
+                >
+                  <Terminal size={12} /> Copiar SQL
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -122,28 +202,36 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ supabase, config, setConfig, pr
           <div className="space-y-6">
              <div className="flex justify-between items-center mb-4">
                 <h3 className="text-lg font-black uppercase text-white flex items-center gap-2">
-                  <Database size={18} className="text-indigo-500" /> Configurações Gerais
+                  <Database size={18} className="text-indigo-500" /> Configuração da Loja
                 </h3>
                 {saveStatus !== 'idle' && (
                   <span className={`text-[9px] px-2 py-1 rounded-full font-bold flex items-center gap-1 ${saveStatus === 'saving' ? 'bg-yellow-500/10 text-yellow-500 animate-pulse' : 'bg-green-500/10 text-green-500'}`}>
-                    {saveStatus === 'saving' ? 'Salvando...' : 'Sincronizado'}
+                    <Check size={10} /> {saveStatus === 'saving' ? 'Salvando...' : 'Sincronizado'}
                   </span>
                 )}
              </div>
              <div className="grid gap-6">
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-slate-500 uppercase">Nome da Loja</label>
-                  <input type="text" value={config.name || ''} onChange={e => setConfig({...config, name: e.target.value})} className="w-full p-4 bg-slate-950 border border-slate-700 rounded-xl outline-none text-white focus:border-indigo-500" />
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">Nome da Loja</label>
+                    <input type="text" value={config.name || ''} onChange={e => setConfig({...config, name: e.target.value})} className="w-full p-4 bg-slate-950 border border-slate-700 rounded-xl outline-none text-white focus:border-indigo-500" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">WhatsApp de Resgate</label>
+                    <input type="text" value={config.whatsappNumber || ''} onChange={e => setConfig({...config, whatsappNumber: e.target.value})} className="w-full p-4 bg-slate-950 border border-slate-700 rounded-xl outline-none text-white focus:border-indigo-500" />
+                  </div>
                 </div>
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-slate-500 uppercase">WhatsApp de Resgate</label>
-                  <input type="text" value={config.whatsappNumber || ''} onChange={e => setConfig({...config, whatsappNumber: e.target.value})} className="w-full p-4 bg-slate-950 border border-slate-700 rounded-xl outline-none text-white focus:border-indigo-500" />
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">Senha do Painel</label>
+                    <input type="text" value={config.adminPassword || ''} onChange={e => setConfig({...config, adminPassword: e.target.value})} className="w-full p-4 bg-slate-950 border border-slate-700 rounded-xl outline-none text-white focus:border-indigo-500" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">Senha Global (Alternativa)</label>
+                    <input type="text" value={config.globalAdminPassword || ''} onChange={e => setConfig({...config, globalAdminPassword: e.target.value})} className="w-full p-4 bg-slate-950 border border-slate-700 rounded-xl outline-none text-white focus:border-indigo-500" />
+                  </div>
                 </div>
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-slate-500 uppercase">Senha Admin</label>
-                  <input type="text" value={config.adminPassword || ''} onChange={e => setConfig({...config, adminPassword: e.target.value})} className="w-full p-4 bg-slate-950 border border-slate-700 rounded-xl outline-none text-white focus:border-indigo-500" />
-                </div>
-                <button onClick={syncConfig} className="w-full py-4 rounded-xl font-black bg-indigo-600 text-white hover:bg-indigo-500 transition-all uppercase text-xs tracking-widest shadow-lg shadow-indigo-900/20 active:scale-95">Salvar Todas Alterações</button>
+                <button onClick={syncConfig} className="w-full py-4 rounded-xl font-black bg-indigo-600 text-white hover:bg-indigo-500 transition-all uppercase text-xs tracking-widest shadow-lg shadow-indigo-900/20 active:scale-95">Salvar Configurações</button>
              </div>
           </div>
         )}
@@ -161,7 +249,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ supabase, config, setConfig, pr
                  <div key={p.id || idx} className="p-4 border border-slate-800 rounded-2xl bg-slate-950/30 flex flex-col md:flex-row gap-4 items-center group">
                    <div className="flex-1 w-full space-y-1">
                      <input value={p.name || ''} onChange={e => { const up = [...prizes]; up[idx].name = e.target.value; setPrizes(up); }} className="font-bold text-white bg-transparent outline-none w-full border-b border-slate-800 pb-1 focus:border-indigo-500" />
-                     <input value={p.description || ''} placeholder="Mensagem..." onChange={e => { const up = [...prizes]; up[idx].description = e.target.value; setPrizes(up); }} className="text-[10px] text-slate-500 bg-transparent outline-none w-full" />
+                     <input value={p.description || ''} placeholder="Mensagem de vitória..." onChange={e => { const up = [...prizes]; up[idx].description = e.target.value; setPrizes(up); }} className="text-[10px] text-slate-500 bg-transparent outline-none w-full" />
                    </div>
                    <div className="flex items-center gap-3">
                      <select value={p.isWinning ? "true" : "false"} onChange={e => { const up = [...prizes]; up[idx].isWinning = e.target.value === "true"; setPrizes(up); }} className="bg-slate-900 border border-slate-700 text-[9px] font-bold uppercase text-slate-400 p-2 rounded-lg outline-none">
@@ -175,7 +263,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ supabase, config, setConfig, pr
                  </div>
                ))}
              </div>
-             <button onClick={() => syncPrizes(prizes)} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-4 rounded-xl font-black uppercase text-xs shadow-lg active:scale-95 transition-all">Atualizar Prêmios no Banco</button>
+             <button onClick={() => syncPrizes(prizes)} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-4 rounded-xl font-black uppercase text-xs shadow-lg active:scale-95 transition-all">Atualizar Prêmios</button>
            </div>
         )}
 
@@ -184,7 +272,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ supabase, config, setConfig, pr
             <div className="flex justify-between items-center">
                <h3 className="text-lg font-black uppercase text-white">Últimos Ganhadores</h3>
                <button onClick={fetchData} className="text-indigo-400 hover:text-indigo-300 text-[10px] font-bold uppercase flex items-center gap-1.5">
-                 {/* Fix: Changed size(14) to size={14} to correctly assign the numeric prop value and resolve boolean type error */}
                  <RefreshCw size={14} /> Atualizar Agora
                </button>
             </div>
