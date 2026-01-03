@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { StoreConfig, Prize, Winner } from '../types';
-import { Settings, Gift, LayoutDashboard, Plus, Trash2, Key, Check, Eye, EyeOff, Database, RefreshCw, AlertTriangle, Terminal } from 'lucide-react';
+import { Settings, Gift, LayoutDashboard, Plus, Trash2, Key, Check, Database, RefreshCw, AlertTriangle, Terminal } from 'lucide-react';
 
 interface AdminPanelProps {
   supabase: SupabaseClient;
@@ -23,7 +23,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   isAuthenticated, setIsAuthenticated 
 }) => {
   const [passwordInput, setPasswordInput] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [activeTab, setActiveTab] = useState<'config' | 'prizes' | 'winners'>('config');
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
 
@@ -57,50 +56,52 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
     
     if (error) {
       console.error("Erro no upsert:", error);
-      
       const basicPayload = {
         id: 1,
         name: config.name,
         whatsappnumber: config.whatsappnumber
       };
-      
       const { error: error2 } = await supabase.from('scratch_config').upsert(basicPayload);
-      
       if (error2) {
         alert(`Erro Crítico: ${error2.message}\n\nExecute o SQL de reparo no Supabase.`);
         setSaveStatus('idle');
       } else {
         alert("Aviso: Algumas configurações avançadas não foram salvas. Use o SQL de Reparo abaixo.");
         setSaveStatus('saved');
+        fetchData(true);
         setTimeout(() => setSaveStatus('idle'), 3000);
-        fetchData(true); // Atualiza dados sem resetar a tela
       }
     } else {
       setSaveStatus('saved');
-      fetchData(true); // Atualiza dados sem resetar a tela
+      fetchData(true);
       setTimeout(() => setSaveStatus('idle'), 2000);
     }
   };
 
   const syncPrizes = async (newPrizes: Prize[]) => {
     setSaveStatus('saving');
-    
+
     try {
       await supabase.from('scratch_prizes').delete().neq('name', '___sys_lock___');
-      
-      const prizesToInsert = newPrizes.map(({ id, ...rest }) => ({
-        ...rest
+
+      const prizesToInsert = newPrizes.map((p) => ({
+        name: p.name ?? '',
+        description: p.description ?? '',
+        iswinning: !!p.iswinning
+        // NÃO enviar created_at ou id para o banco gerar automaticamente
       }));
 
-      const { error } = await supabase.from('scratch_prizes').insert(prizesToInsert);
-      
+      const { error } = await supabase
+        .from('scratch_prizes')
+        .insert(prizesToInsert);
+
       if (error) {
         alert(`Erro ao salvar prêmios: ${error.message}\n\nSe o erro persistir, use o SCRIPT DE REPARO.`);
         setSaveStatus('idle');
       } else {
         setSaveStatus('saved');
         setTimeout(() => setSaveStatus('idle'), 2000);
-        fetchData(true); // Chamada silenciosa para manter a tela do admin aberta
+        fetchData(true);
       }
     } catch (err) {
       console.error(err);
@@ -110,12 +111,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
 
   const sqlRepair = `-- COPIE TUDO E COLE NO SQL EDITOR DO SUPABASE
 
--- 1. Garante que as colunas de data tenham valor automático (Resolve o erro created_at nulo)
+-- 1. Garante que as colunas de data tenham valor automático
 ALTER TABLE public.scratch_prizes ALTER COLUMN created_at SET DEFAULT now();
 ALTER TABLE public.scratch_winners ALTER COLUMN created_at SET DEFAULT now();
 ALTER TABLE public.scratch_config ALTER COLUMN created_at SET DEFAULT now();
 
--- 2. Atualiza a estrutura da tabela de prêmios (Garante que a coluna name exista e iswinning também)
+-- 2. Atualiza a estrutura da tabela de prêmios
 ALTER TABLE public.scratch_prizes ADD COLUMN IF NOT EXISTS "name" text;
 ALTER TABLE public.scratch_prizes ADD COLUMN IF NOT EXISTS "description" text;
 ALTER TABLE public.scratch_prizes ADD COLUMN IF NOT EXISTS "iswinning" boolean DEFAULT true;
@@ -127,10 +128,8 @@ ALTER TABLE public.scratch_config ADD COLUMN IF NOT EXISTS "globalAdminPassword"
 ALTER TABLE public.scratch_config ADD COLUMN IF NOT EXISTS "primaryColor" text DEFAULT '#4f46e5';
 ALTER TABLE public.scratch_config ADD COLUMN IF NOT EXISTS "logoUrl" text DEFAULT 'https://cdn-icons-png.flaticon.com/512/606/606547.png';
 
--- 4. Notificar o sistema das mudanças
 NOTIFY pgrst, 'reload schema';
 
--- 5. Criar config inicial
 INSERT INTO public.scratch_config (id, name, "adminPassword") 
 VALUES (1, 'JG PESO', 'admin') 
 ON CONFLICT (id) DO NOTHING;`;
@@ -145,7 +144,7 @@ ON CONFLICT (id) DO NOTHING;`;
         </div>
         <form onSubmit={handleLogin} className="space-y-4">
           <input 
-            type={showPassword ? "text" : "password"} 
+            type="password"
             value={passwordInput} 
             onChange={e => setPasswordInput(e.target.value)} 
             className="w-full p-4 bg-slate-950 border border-slate-700 rounded-xl outline-none text-white focus:border-indigo-500" 

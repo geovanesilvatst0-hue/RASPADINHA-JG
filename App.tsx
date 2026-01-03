@@ -115,7 +115,7 @@ const App: React.FC = () => {
     const channel = supabase
       .channel('schema-db-changes')
       .on('postgres_changes', { event: '*', schema: 'public' }, () => {
-        fetchData(true); // Atualização silenciosa para não quebrar o estado da UI
+        fetchData(true);
       })
       .subscribe();
     return () => {
