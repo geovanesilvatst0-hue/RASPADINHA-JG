@@ -79,37 +79,50 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   };
 
   const syncPrizes = async (newPrizes: Prize[]) => {
-  setSaveStatus('saving');
+    setSaveStatus('saving');
 
-  try {
-    await supabase.from('scratch_prizes').delete().neq('name', '___sys_lock___');
+    try {
+      await supabase.from('scratch_prizes').delete().neq('name', '___sys_lock___');
 
-    const prizesToInsert = newPrizes.map((p) => ({
-      name: p.name ?? '',
-      description: p.description ?? '',
-      iswinning: !!p.iswinning
-      // ⚠️ NÃO enviar created_at
-      // ⚠️ NÃO enviar id
-    }));
+      const prizesToInsert = newPrizes.map((p) => ({
+        name: p.name ?? '',
+        description: p.description ?? '',
+        iswinning: !!p.iswinning
+      }));
 
-    const { error } = await supabase
-      .from('scratch_prizes')
-      .insert(prizesToInsert);
+      const { error } = await supabase
+        .from('scratch_prizes')
+        .insert(prizesToInsert);
 
-    if (error) {
-      alert(`Erro ao salvar prêmios: ${error.message}\n\nSe o erro persistir, use o SCRIPT DE REPARO.`);
+      if (error) {
+        alert(`Erro ao salvar prêmios: ${error.message}\n\nSe o erro persistir, use o SCRIPT DE REPARO.`);
+        setSaveStatus('idle');
+      } else {
+        setSaveStatus('saved');
+        setTimeout(() => setSaveStatus('idle'), 2000);
+        fetchData(true);
+      }
+    } catch (err) {
+      console.error(err);
       setSaveStatus('idle');
+    }
+  };
+
+  const deleteWinner = async (id: string) => {
+    if (!confirm('Tem certeza que deseja excluir este registro de ganhador?')) return;
+    
+    const { error } = await supabase
+      .from('scratch_winners')
+      .delete()
+      .eq('id', id);
+      
+    if (error) {
+      alert('Erro ao excluir ganhador: ' + error.message);
     } else {
-      setSaveStatus('saved');
-      setTimeout(() => setSaveStatus('idle'), 2000);
       fetchData(true);
     }
-  } catch (err) {
-    
-    console.error(err);
-    setSaveStatus('idle');
-  }
-};
+  };
+
   const sqlRepair = `-- COPIE TUDO E COLE NO SQL EDITOR DO SUPABASE
 
 -- 1. Garante que as colunas de data tenham valor automático
@@ -277,6 +290,7 @@ ON CONFLICT (id) DO NOTHING;`;
                     <th className="px-5 py-4">CPF</th>
                     <th className="px-5 py-4">Prêmio</th>
                     <th className="px-5 py-4">Data</th>
+                    <th className="px-5 py-4 text-center">Ações</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800">
@@ -284,8 +298,21 @@ ON CONFLICT (id) DO NOTHING;`;
                     <tr key={w.id}>
                       <td className="px-5 py-4 font-bold text-slate-200">{w.userName}</td>
                       <td className="px-5 py-4 text-slate-500">{w.userCpf}</td>
-                      <td className="px-5 py-4"><span className="px-2 py-1 bg-indigo-500/10 text-indigo-400 rounded-full font-black text-[8px] uppercase">{w.prizeName}</span></td>
+                      <td className="px-5 py-4">
+                        <span className="px-2 py-1 bg-indigo-500/10 text-indigo-400 rounded-full font-black text-[8px] uppercase">
+                          {w.prizeName}
+                        </span>
+                      </td>
                       <td className="px-5 py-4 text-slate-700 font-mono text-[9px]">{w.date}</td>
+                      <td className="px-5 py-4 text-center">
+                        <button 
+                          onClick={() => deleteWinner(w.id)} 
+                          className="p-2 text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
+                          title="Excluir Ganhador"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
