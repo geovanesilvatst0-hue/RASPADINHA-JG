@@ -34,7 +34,7 @@ const App: React.FC = () => {
   const [isScratchingActive, setIsScratchingActive] = useState(false);
   const [isRevealed, setIsRevealed] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [syncCountdown, setSyncCountdown] = useState(8);
+  const [syncCountdown, setSyncCountdown] = useState(3);
   const [isCopied, setIsCopied] = useState(false);
   const [isRedeemed, setIsRedeemed] = useState(false);
   const scratchCardRef = useRef<ScratchCardRef>(null);
@@ -168,7 +168,7 @@ const App: React.FC = () => {
     setIsRevealed(false);
     setIsSyncing(false);
     setIsRedeemed(false);
-    setSyncCountdown(8);
+    setSyncCountdown(3);
     generatePrizeMessage(randomPrize.name, randomPrize.iswinning).then(setAiMessage);
   };
 
