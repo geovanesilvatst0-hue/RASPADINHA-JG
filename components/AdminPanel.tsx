@@ -79,36 +79,37 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   };
 
   const syncPrizes = async (newPrizes: Prize[]) => {
-    setSaveStatus('saving');
+  setSaveStatus('saving');
 
-    try {
-      await supabase.from('scratch_prizes').delete().neq('name', '___sys_lock___');
+  try {
+    await supabase.from('scratch_prizes').delete().neq('name', '___sys_lock___');
 
-      const prizesToInsert = newPrizes.map((p) => ({
-        name: p.name ?? '',
-        description: p.description ?? '',
-        iswinning: !!p.iswinning
-        // NÃO enviar created_at ou id para o banco gerar automaticamente
-      }));
+    const prizesToInsert = newPrizes.map((p) => ({
+      name: p.name ?? '',
+      description: p.description ?? '',
+      iswinning: !!p.iswinning
+      // ⚠️ NÃO enviar created_at
+      // ⚠️ NÃO enviar id
+    }));
 
-      const { error } = await supabase
-        .from('scratch_prizes')
-        .insert(prizesToInsert);
+    const { error } = await supabase
+      .from('scratch_prizes')
+      .insert(prizesToInsert);
 
-      if (error) {
-        alert(`Erro ao salvar prêmios: ${error.message}\n\nSe o erro persistir, use o SCRIPT DE REPARO.`);
-        setSaveStatus('idle');
-      } else {
-        setSaveStatus('saved');
-        setTimeout(() => setSaveStatus('idle'), 2000);
-        fetchData(true);
-      }
-    } catch (err) {
-      console.error(err);
+    if (error) {
+      alert(`Erro ao salvar prêmios: ${error.message}\n\nSe o erro persistir, use o SCRIPT DE REPARO.`);
       setSaveStatus('idle');
+    } else {
+      setSaveStatus('saved');
+      setTimeout(() => setSaveStatus('idle'), 2000);
+      fetchData(true);
     }
-  };
-
+  } catch (err) {
+    
+    console.error(err);
+    setSaveStatus('idle');
+  }
+};
   const sqlRepair = `-- COPIE TUDO E COLE NO SQL EDITOR DO SUPABASE
 
 -- 1. Garante que as colunas de data tenham valor automático
