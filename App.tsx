@@ -6,27 +6,15 @@ import AdminPanel from './components/AdminPanel';
 import { Prize, Winner, StoreConfig, AppView } from './types';
 import { INITIAL_PRIZES, INITIAL_CONFIG } from './constants';
 import { generatePrizeMessage } from './services/geminiService';
-import { Ticket, ChevronRight, AlertCircle, User, Check, RefreshCw, Loader2, PartyPopper, Wand2 } from 'lucide-react';
+import { Ticket, ChevronRight, AlertCircle, User, Check, RefreshCw, Loader2, PartyPopper, Wand2, Phone } from 'lucide-react';
 
 const SUPABASE_URL = 'https://zhyxwzzcgmuooldwhmvz.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_ahq1ky6QS5sV7UodPjCmJA_HkZvuoWl';
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-const isValidCPF = (cpf: string = ''): boolean => {
-  const cleanCPF = (cpf || '').replace(/\D/g, '');
-  if (cleanCPF.length !== 11 || !!cleanCPF.match(/(\d)\1{10}/)) return false;
-  const digits = cleanCPF.split('').map(Number);
-  const calculateDigit = (slice: number[]) => {
-    const factor = slice.length + 1;
-    const sum = slice.reduce((acc, digit, idx) => acc + digit * (factor - idx), 0);
-    const result = (sum * 10) % 11;
-    return result === 10 ? 0 : result;
-  };
-  const firstDigit = calculateDigit(digits.slice(0, 9));
-  if (firstDigit !== digits[9]) return false;
-  const secondDigit = calculateDigit(digits.slice(0, 10));
-  if (secondDigit !== digits[10]) return false;
-  return true;
+const isValidPhone = (phone: string = ''): boolean => {
+  const cleanPhone = (phone || '').replace(/\D/g, '');
+  return cleanPhone.length >= 10 && cleanPhone.length <= 11;
 };
 
 const App: React.FC = () => {
@@ -38,8 +26,8 @@ const App: React.FC = () => {
   const [dbError, setDbError] = useState<string | null>(null);
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
 
-  const [currentUser, setCurrentUser] = useState({ name: '', cpf: '' });
-  const [cpfError, setCpfError] = useState(false);
+  const [currentUser, setCurrentUser] = useState({ name: '', phone: '' });
+  const [phoneError, setPhoneError] = useState(false);
   const [currentPrize, setCurrentPrize] = useState<Prize | null>(null);
   const [prizeCode, setPrizeCode] = useState('');
   const [aiMessage, setAiMessage] = useState('');
@@ -89,7 +77,11 @@ const App: React.FC = () => {
         .order('created_at', { ascending: false });
       
       if (winnersData) {
-        setWinners(winnersData);
+        // Mapeia userCpf para userPhone caso o banco ainda use o nome antigo
+        setWinners(winnersData.map(w => ({
+          ...w,
+          userPhone: w.userPhone || w.userCpf
+        })));
       }
 
       const savedSession = localStorage.getItem('scratch_session');
@@ -150,14 +142,15 @@ const App: React.FC = () => {
 
   const startScratch = async (e: React.FormEvent) => {
     e.preventDefault();
-    setCpfError(false);
-    if (!currentUser.name || !currentUser.cpf) return;
-    if (!isValidCPF(currentUser.cpf)) { setCpfError(true); return; }
+    setPhoneError(false);
+    if (!currentUser.name || !currentUser.phone) return;
+    if (!isValidPhone(currentUser.phone)) { setPhoneError(true); return; }
     
     const today = new Date().toLocaleDateString('pt-BR');
     const hasPlayedToday = winners.some(w => {
-      if (!w.userCpf || !w.date) return false;
-      return w.userCpf === currentUser.cpf && (w.date || '').split(',')[0].trim() === today;
+      if (!w.userPhone || !w.date) return false;
+      const playDate = (w.date || '').split(',')[0].trim();
+      return w.userPhone === currentUser.phone && playDate === today;
     });
     
     if (hasPlayedToday) { 
@@ -189,16 +182,24 @@ const App: React.FC = () => {
     if (currentPrize && !isRevealed) {
       const newWinner = { 
         userName: currentUser.name, 
-        userCpf: currentUser.cpf, 
+        userPhone: currentUser.phone, 
         prizeName: currentPrize.name, 
         prizeCode: prizeCode, 
         date: new Date().toLocaleString('pt-BR') 
       };
 
+      // Tenta inserir usando userPhone, se falhar tenta userCpf para compatibilidade
       const { error } = await supabase.from('scratch_winners').insert([newWinner]);
       
       if (error) {
-        console.error("Erro ao salvar ganhador:", error);
+        // Fallback para colunas antigas se o SQL de reparo ainda não foi rodado
+        await supabase.from('scratch_winners').insert([{
+          userName: currentUser.name,
+          userCpf: currentUser.phone,
+          prizeName: currentPrize.name,
+          prizeCode: prizeCode,
+          date: new Date().toLocaleString('pt-BR')
+        }]);
       }
       
       setIsSyncing(false);
@@ -217,8 +218,8 @@ const App: React.FC = () => {
       if (!confirm("Você tem um prêmio vencedor pendente! Tem certeza que deseja limpar?")) return;
     }
     localStorage.removeItem('scratch_session');
-    setCurrentUser({ name: '', cpf: '' });
-    setCpfError(false);
+    setCurrentUser({ name: '', phone: '' });
+    setPhoneError(false);
     setIsScratchingActive(false);
     setIsRevealed(false);
     setIsSyncing(false);
@@ -242,7 +243,7 @@ const App: React.FC = () => {
   };
 
   const salesWhatsappLink = `https://wa.me/${(config.adminContactNumber || '5564993408657').replace(/\D/g, '')}?text=${encodeURIComponent(`Olá! Vi a raspadinha digital da loja ${config.name} e gostaria de saber como faço para ter uma igual para o meu negócio!`)}`;
-  const whatsappLink = `https://wa.me/${(config.whatsappnumber || '').replace(/\D/g, '')}?text=${encodeURIComponent(`🎟️ RESGATE - ${config.name}\n👤 Cliente: ${currentUser.name}\n📄 CPF: ${currentUser.cpf}\n🎁 Prêmio: ${currentPrize?.name}\n🔑 Código: ${prizeCode}`)}`;
+  const whatsappLink = `https://wa.me/${(config.whatsappnumber || '').replace(/\D/g, '')}?text=${encodeURIComponent(`🎟️ RESGATE - ${config.name}\n👤 Cliente: ${currentUser.name}\n📱 Celular: ${currentUser.phone}\n🎁 Prêmio: ${currentPrize?.name}\n🔑 Código: ${prizeCode}`)}`;
 
   if (loading) {
     return (
@@ -288,7 +289,7 @@ const App: React.FC = () => {
             </h1>
           </div>
           <p className="text-[11px] text-slate-400 leading-tight">
-            Válido para 1 participação diária por CPF. Raspe até o fim e resgate no WhatsApp.
+            Válido para 1 participação diária por Celular. Raspe até o fim e resgate no WhatsApp.
           </p>
         </header>
 
@@ -309,22 +310,24 @@ const App: React.FC = () => {
               </div>
               <div className="space-y-1.5">
                 <div className="flex justify-between">
-                  <label className="text-xs text-slate-400 font-semibold uppercase tracking-wider">CPF</label>
-                  {cpfError && <span className="text-[10px] text-red-500 flex items-center gap-1 font-bold animate-pulse"><AlertCircle size={10} /> INVÁLIDO</span>}
+                  <label className="text-xs text-slate-400 font-semibold uppercase tracking-wider">WhatsApp / Celular</label>
+                  {phoneError && <span className="text-[10px] text-red-500 flex items-center gap-1 font-bold animate-pulse"><AlertCircle size={10} /> INVÁLIDO</span>}
                 </div>
-                <input 
-                  disabled={isScratchingActive} 
-                  required 
-                  type="text" 
-                  maxLength={11} 
-                  value={currentUser.cpf} 
-                  onChange={e => { 
-                    setCurrentUser({...currentUser, cpf: (e.target.value || '').replace(/\D/g, '')}); 
-                    if(cpfError) setCpfError(false); 
-                  }} 
-                  className={`custom-input w-full px-4 py-3 rounded-xl outline-none transition-all font-medium ${cpfError ? 'border-red-500 ring-1 ring-red-500/20' : ''}`} 
-                  placeholder="000.000.000-00" 
-                />
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500"><Phone size={14} /></span>
+                  <input 
+                    disabled={isScratchingActive} 
+                    required 
+                    type="tel" 
+                    value={currentUser.phone} 
+                    onChange={e => { 
+                      setCurrentUser({...currentUser, phone: (e.target.value || '').replace(/\D/g, '')}); 
+                      if(phoneError) setPhoneError(false); 
+                    }} 
+                    className={`custom-input w-full pl-10 pr-4 py-3 rounded-xl outline-none transition-all font-medium ${phoneError ? 'border-red-500 ring-1 ring-red-500/20' : ''}`} 
+                    placeholder="(00) 00000-0000" 
+                  />
+                </div>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">

@@ -135,7 +135,12 @@ ALTER TABLE public.scratch_prizes ADD COLUMN IF NOT EXISTS "name" text;
 ALTER TABLE public.scratch_prizes ADD COLUMN IF NOT EXISTS "description" text;
 ALTER TABLE public.scratch_prizes ADD COLUMN IF NOT EXISTS "iswinning" boolean DEFAULT true;
 
--- 3. Garante que as colunas de configuração existam
+-- 3. Renomeia ou adiciona a coluna de celular na tabela de ganhadores
+ALTER TABLE public.scratch_winners ADD COLUMN IF NOT EXISTS "userPhone" text;
+-- Se quiser migrar os dados antigos de userCpf para userPhone:
+-- UPDATE public.scratch_winners SET "userPhone" = "userCpf" WHERE "userPhone" IS NULL;
+
+-- 4. Garante que as colunas de configuração existam
 ALTER TABLE public.scratch_config ADD COLUMN IF NOT EXISTS "adminPassword" text DEFAULT 'admin';
 ALTER TABLE public.scratch_config ADD COLUMN IF NOT EXISTS "adminContactNumber" text DEFAULT '5564993408657';
 ALTER TABLE public.scratch_config ADD COLUMN IF NOT EXISTS "globalAdminPassword" text DEFAULT '123';
@@ -182,7 +187,7 @@ ON CONFLICT (id) DO NOTHING;`;
           <div className="flex-1">
             <h4 className="text-red-500 font-bold text-xs uppercase mb-1">Ajuste de Banco Necessário!</h4>
             <p className="text-red-500/70 text-[10px] leading-relaxed mb-3">
-              Para corrigir o erro de prêmios nulos ou data obrigatória, copie o script e execute no SQL Editor do Supabase.
+              Para suporte ao campo de celular, execute o script no SQL Editor do Supabase.
             </p>
             <button 
               onClick={() => { navigator.clipboard.writeText(sqlRepair); alert('Script copiado! Vá ao seu Supabase > SQL Editor > New Query > Cole e clique em RUN.'); }}
@@ -287,7 +292,7 @@ ON CONFLICT (id) DO NOTHING;`;
                 <thead className="bg-slate-900/80 text-[9px] text-slate-500 uppercase">
                   <tr>
                     <th className="px-5 py-4">Cliente</th>
-                    <th className="px-5 py-4">CPF</th>
+                    <th className="px-5 py-4">Celular</th>
                     <th className="px-5 py-4">Prêmio</th>
                     <th className="px-5 py-4">Data</th>
                     <th className="px-5 py-4 text-center">Ações</th>
@@ -297,7 +302,7 @@ ON CONFLICT (id) DO NOTHING;`;
                   {winners.map(w => (
                     <tr key={w.id}>
                       <td className="px-5 py-4 font-bold text-slate-200">{w.userName}</td>
-                      <td className="px-5 py-4 text-slate-500">{w.userCpf}</td>
+                      <td className="px-5 py-4 text-slate-500">{w.userPhone}</td>
                       <td className="px-5 py-4">
                         <span className="px-2 py-1 bg-indigo-500/10 text-indigo-400 rounded-full font-black text-[8px] uppercase">
                           {w.prizeName}

@@ -9,7 +9,7 @@ export interface Prize {
 export interface Winner {
   id: string;
   userName: string;
-  userCpf: string;
+  userPhone: string;
   prizeName: string;
   prizeCode: string;
   date: string;
