@@ -12,12 +12,16 @@ interface AdminPanelProps {
   setPrizes: React.Dispatch<React.SetStateAction<Prize[]>>;
   winners: Winner[];
   onBack: () => void;
-  fetchData: () => Promise<void>;
+  fetchData: (silent?: boolean) => Promise<void>;
   dbError?: string | null;
+  isAuthenticated: boolean;
+  setIsAuthenticated: (val: boolean) => void;
 }
 
-const AdminPanel: React.FC<AdminPanelProps> = ({ supabase, config, setConfig, prizes, setPrizes, winners, onBack, fetchData, dbError }) => {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+const AdminPanel: React.FC<AdminPanelProps> = ({ 
+  supabase, config, setConfig, prizes, setPrizes, winners, onBack, fetchData, dbError, 
+  isAuthenticated, setIsAuthenticated 
+}) => {
   const [passwordInput, setPasswordInput] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [activeTab, setActiveTab] = useState<'config' | 'prizes' | 'winners'>('config');
@@ -66,45 +70,67 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ supabase, config, setConfig, pr
         alert(`Erro Crítico: ${error2.message}\n\nExecute o SQL de reparo no Supabase.`);
         setSaveStatus('idle');
       } else {
-        alert("Aviso: Algumas configurações avançadas não foram salvas pois faltam colunas no seu banco de dados. Use o SQL de Reparo abaixo para corrigir definitivamente.");
+        alert("Aviso: Algumas configurações avançadas não foram salvas. Use o SQL de Reparo abaixo.");
         setSaveStatus('saved');
         setTimeout(() => setSaveStatus('idle'), 3000);
+        fetchData(true); // Atualiza dados sem resetar a tela
       }
     } else {
       setSaveStatus('saved');
+      fetchData(true); // Atualiza dados sem resetar a tela
       setTimeout(() => setSaveStatus('idle'), 2000);
     }
   };
 
   const syncPrizes = async (newPrizes: Prize[]) => {
     setSaveStatus('saving');
-    await supabase.from('scratch_prizes').delete().neq('name', '___sys_lock___');
-    const { error } = await supabase.from('scratch_prizes').insert(newPrizes);
     
-    if (error) {
-      alert(`Erro: ${error.message}`);
+    try {
+      await supabase.from('scratch_prizes').delete().neq('name', '___sys_lock___');
+      
+      const prizesToInsert = newPrizes.map(({ id, ...rest }) => ({
+        ...rest
+      }));
+
+      const { error } = await supabase.from('scratch_prizes').insert(prizesToInsert);
+      
+      if (error) {
+        alert(`Erro ao salvar prêmios: ${error.message}\n\nSe o erro persistir, use o SCRIPT DE REPARO.`);
+        setSaveStatus('idle');
+      } else {
+        setSaveStatus('saved');
+        setTimeout(() => setSaveStatus('idle'), 2000);
+        fetchData(true); // Chamada silenciosa para manter a tela do admin aberta
+      }
+    } catch (err) {
+      console.error(err);
       setSaveStatus('idle');
-    } else {
-      setSaveStatus('saved');
-      setTimeout(() => setSaveStatus('idle'), 2000);
     }
   };
 
-  const sqlRepair = `-- COPIE E COLE NO SQL EDITOR DO SUPABASE
+  const sqlRepair = `-- COPIE TUDO E COLE NO SQL EDITOR DO SUPABASE
+
+-- 1. Garante que as colunas de data tenham valor automático (Resolve o erro created_at nulo)
+ALTER TABLE public.scratch_prizes ALTER COLUMN created_at SET DEFAULT now();
+ALTER TABLE public.scratch_winners ALTER COLUMN created_at SET DEFAULT now();
+ALTER TABLE public.scratch_config ALTER COLUMN created_at SET DEFAULT now();
+
+-- 2. Atualiza a estrutura da tabela de prêmios (Garante que a coluna name exista e iswinning também)
+ALTER TABLE public.scratch_prizes ADD COLUMN IF NOT EXISTS "name" text;
+ALTER TABLE public.scratch_prizes ADD COLUMN IF NOT EXISTS "description" text;
+ALTER TABLE public.scratch_prizes ADD COLUMN IF NOT EXISTS "iswinning" boolean DEFAULT true;
+
+-- 3. Garante que as colunas de configuração existam
 ALTER TABLE public.scratch_config ADD COLUMN IF NOT EXISTS "adminPassword" text DEFAULT 'admin';
 ALTER TABLE public.scratch_config ADD COLUMN IF NOT EXISTS "adminContactNumber" text DEFAULT '5564993408657';
 ALTER TABLE public.scratch_config ADD COLUMN IF NOT EXISTS "globalAdminPassword" text DEFAULT '123';
 ALTER TABLE public.scratch_config ADD COLUMN IF NOT EXISTS "primaryColor" text DEFAULT '#4f46e5';
 ALTER TABLE public.scratch_config ADD COLUMN IF NOT EXISTS "logoUrl" text DEFAULT 'https://cdn-icons-png.flaticon.com/512/606/606547.png';
-ALTER TABLE public.scratch_config ADD COLUMN IF NOT EXISTS "whatsappnumber" text;
 
--- Atualizar coluna de prêmios se necessário
-ALTER TABLE public.scratch_prizes ADD COLUMN IF NOT EXISTS "iswinning" boolean DEFAULT true;
-
--- Recarregar cache do sistema
+-- 4. Notificar o sistema das mudanças
 NOTIFY pgrst, 'reload schema';
 
--- Criar configuração inicial se não existir
+-- 5. Criar config inicial
 INSERT INTO public.scratch_config (id, name, "adminPassword") 
 VALUES (1, 'JG PESO', 'admin') 
 ON CONFLICT (id) DO NOTHING;`;
@@ -141,12 +167,12 @@ ON CONFLICT (id) DO NOTHING;`;
             <AlertTriangle size={20} />
           </div>
           <div className="flex-1">
-            <h4 className="text-red-500 font-bold text-xs uppercase mb-1">Ajuste de Banco Necessário?</h4>
+            <h4 className="text-red-500 font-bold text-xs uppercase mb-1">Ajuste de Banco Necessário!</h4>
             <p className="text-red-500/70 text-[10px] leading-relaxed mb-3">
-              Se colunas como "iswinning" ou "whatsappnumber" derem erro, use o script abaixo.
+              Para corrigir o erro de prêmios nulos ou data obrigatória, copie o script e execute no SQL Editor do Supabase.
             </p>
             <button 
-              onClick={() => { navigator.clipboard.writeText(sqlRepair); alert('Script copiado!'); }}
+              onClick={() => { navigator.clipboard.writeText(sqlRepair); alert('Script copiado! Vá ao seu Supabase > SQL Editor > New Query > Cole e clique em RUN.'); }}
               className="bg-slate-950 hover:bg-black text-white px-4 py-2 rounded-lg text-[10px] font-black flex items-center gap-2 border border-slate-800 transition-all"
             >
               <Terminal size={14} /> COPIAR SCRIPT DE REPARO
@@ -193,12 +219,12 @@ ON CONFLICT (id) DO NOTHING;`;
                 </div>
                 <div className="grid md:grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold text-slate-500 uppercase">Senha do Painel</label>
-                    <input type="text" value={config.adminPassword || ''} onChange={e => setConfig({...config, adminPassword: e.target.value})} className="w-full p-4 bg-slate-950 border border-slate-700 rounded-xl outline-none text-white focus:border-indigo-500" />
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">Contato Comercial (Fazer Raspadinha)</label>
+                    <input type="text" value={config.adminContactNumber || ''} onChange={e => setConfig({...config, adminContactNumber: e.target.value})} className="w-full p-4 bg-slate-950 border border-slate-700 rounded-xl outline-none text-white focus:border-indigo-500" placeholder="Ex: 5564..." />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold text-slate-500 uppercase">Senha Global</label>
-                    <input type="text" value={config.globalAdminPassword || ''} onChange={e => setConfig({...config, globalAdminPassword: e.target.value})} className="w-full p-4 bg-slate-950 border border-slate-700 rounded-xl outline-none text-white focus:border-indigo-500" />
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">Senha do Painel</label>
+                    <input type="text" value={config.adminPassword || ''} onChange={e => setConfig({...config, adminPassword: e.target.value})} className="w-full p-4 bg-slate-950 border border-slate-700 rounded-xl outline-none text-white focus:border-indigo-500" />
                   </div>
                 </div>
                 <button onClick={syncConfig} className="w-full py-4 rounded-xl font-black bg-indigo-600 text-white hover:bg-indigo-500 transition-all uppercase text-xs tracking-widest shadow-lg shadow-indigo-900/20 active:scale-95">Salvar Configurações</button>
@@ -218,8 +244,8 @@ ON CONFLICT (id) DO NOTHING;`;
                {prizes.map((p, idx) => (
                  <div key={p.id} className="p-4 border border-slate-800 rounded-2xl bg-slate-950/30 flex gap-4 items-center group">
                    <div className="flex-1 space-y-1">
-                     <input value={p.name} onChange={e => { const up = [...prizes]; up[idx].name = e.target.value; setPrizes(up); }} className="font-bold text-white bg-transparent outline-none w-full border-b border-transparent focus:border-indigo-500" />
-                     <input value={p.description} onChange={e => { const up = [...prizes]; up[idx].description = e.target.value; setPrizes(up); }} className="text-[10px] text-slate-500 bg-transparent outline-none w-full" />
+                     <input value={p.name} onChange={e => { const up = [...prizes]; up[idx].name = e.target.value; setPrizes(up); }} className="font-bold text-white bg-transparent outline-none w-full border-b border-transparent focus:border-indigo-500" placeholder="Nome do Prêmio" />
+                     <input value={p.description} onChange={e => { const up = [...prizes]; up[idx].description = e.target.value; setPrizes(up); }} className="text-[10px] text-slate-500 bg-transparent outline-none w-full" placeholder="Descrição" />
                    </div>
                    <select value={p.iswinning ? "true" : "false"} onChange={e => { const up = [...prizes]; up[idx].iswinning = e.target.value === "true"; setPrizes(up); }} className="bg-slate-900 border border-slate-700 text-[9px] font-bold text-slate-400 p-2 rounded-lg">
                      <option value="true">Ganhador</option>
@@ -239,7 +265,7 @@ ON CONFLICT (id) DO NOTHING;`;
           <div className="space-y-6">
             <div className="flex justify-between items-center">
                <h3 className="text-lg font-black uppercase text-white">Relatório de Ganhadores</h3>
-               <button onClick={fetchData} className="text-indigo-400 hover:text-indigo-300 text-[10px] font-bold uppercase flex items-center gap-1.5">
+               <button onClick={() => fetchData(true)} className="text-indigo-400 hover:text-indigo-300 text-[10px] font-bold uppercase flex items-center gap-1.5">
                  <RefreshCw size={14} /> Atualizar
                </button>
             </div>

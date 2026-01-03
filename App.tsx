@@ -6,7 +6,7 @@ import AdminPanel from './components/AdminPanel';
 import { Prize, Winner, StoreConfig, AppView } from './types';
 import { INITIAL_PRIZES, INITIAL_CONFIG } from './constants';
 import { generatePrizeMessage } from './services/geminiService';
-import { Ticket, ChevronRight, AlertCircle, User, Check, RefreshCw, Loader2, PartyPopper } from 'lucide-react';
+import { Ticket, ChevronRight, AlertCircle, User, Check, RefreshCw, Loader2, PartyPopper, Wand2 } from 'lucide-react';
 
 const SUPABASE_URL = 'https://zhyxwzzcgmuooldwhmvz.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_ahq1ky6QS5sV7UodPjCmJA_HkZvuoWl';
@@ -36,6 +36,7 @@ const App: React.FC = () => {
   const [winners, setWinners] = useState<Winner[]>([]);
   const [loading, setLoading] = useState(true);
   const [dbError, setDbError] = useState<string | null>(null);
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
 
   const [currentUser, setCurrentUser] = useState({ name: '', cpf: '' });
   const [cpfError, setCpfError] = useState(false);
@@ -52,10 +53,9 @@ const App: React.FC = () => {
 
   const isClientMode = new URLSearchParams(window.location.search).get('mode') === 'client';
 
-  // Carregar dados e recuperar estado do localStorage
-  const fetchData = async () => {
+  const fetchData = async (silent: boolean = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const { data: configData, error: configError } = await supabase
         .from('scratch_config')
         .select('*')
@@ -92,7 +92,6 @@ const App: React.FC = () => {
         setWinners(winnersData);
       }
 
-      // Recuperar sessão salva
       const savedSession = localStorage.getItem('scratch_session');
       if (savedSession) {
         const session = JSON.parse(savedSession);
@@ -107,7 +106,7 @@ const App: React.FC = () => {
     } catch (e) {
       console.error("Fetch Error:", e);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -116,7 +115,7 @@ const App: React.FC = () => {
     const channel = supabase
       .channel('schema-db-changes')
       .on('postgres_changes', { event: '*', schema: 'public' }, () => {
-        fetchData();
+        fetchData(true); // Atualização silenciosa para não quebrar o estado da UI
       })
       .subscribe();
     return () => {
@@ -124,7 +123,6 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // Salvar estado no localStorage sempre que mudar
   useEffect(() => {
     if (isScratchingActive && currentPrize) {
       const session = {
@@ -200,7 +198,7 @@ const App: React.FC = () => {
       const { error } = await supabase.from('scratch_winners').insert([newWinner]);
       
       if (error) {
-        console.error("Erro ao salvar:", error);
+        console.error("Erro ao salvar ganhador:", error);
       }
       
       setIsSyncing(false);
@@ -211,7 +209,6 @@ const App: React.FC = () => {
   const handleRedeem = () => {
     window.open(whatsappLink, '_blank');
     setIsRedeemed(true);
-    // Remove do localStorage para permitir nova sessão limpa no futuro
     localStorage.removeItem('scratch_session');
   };
 
@@ -244,6 +241,7 @@ const App: React.FC = () => {
     }
   };
 
+  const salesWhatsappLink = `https://wa.me/${(config.adminContactNumber || '5564993408657').replace(/\D/g, '')}?text=${encodeURIComponent(`Olá! Vi a raspadinha digital da loja ${config.name} e gostaria de saber como faço para ter uma igual para o meu negócio!`)}`;
   const whatsappLink = `https://wa.me/${(config.whatsappnumber || '').replace(/\D/g, '')}?text=${encodeURIComponent(`🎟️ RESGATE - ${config.name}\n👤 Cliente: ${currentUser.name}\n📄 CPF: ${currentUser.cpf}\n🎁 Prêmio: ${currentPrize?.name}\n🔑 Código: ${prizeCode}`)}`;
 
   if (loading) {
@@ -271,7 +269,9 @@ const App: React.FC = () => {
           winners={winners} 
           fetchData={fetchData}
           dbError={dbError}
-          onBack={() => setView('user-form')} 
+          onBack={() => setView('user-form')}
+          isAuthenticated={isAdminAuthenticated}
+          setIsAuthenticated={setIsAdminAuthenticated}
         />
       </div>
     );
@@ -346,27 +346,37 @@ const App: React.FC = () => {
           )}
         </div>
 
-        <div className="grid grid-cols-3 gap-2">
+        <div className="space-y-3">
+          <div className="grid grid-cols-3 gap-2">
+            <button 
+              onClick={handleRedeem} 
+              disabled={!isRevealed || !currentPrize?.iswinning} 
+              className={`py-3.5 rounded-xl text-[10px] font-bold uppercase custom-button ${(!isRevealed || !currentPrize?.iswinning) ? 'opacity-40 grayscale' : 'text-slate-200 active:scale-95 bg-green-600 border-green-500 shadow-lg shadow-green-900/20'}`}
+            >
+              {isRedeemed ? 'Resgatado!' : 'Quero resgatar'}
+            </button>
+            <button 
+              onClick={shareApp} 
+              className={`py-3.5 rounded-xl text-[10px] font-bold uppercase custom-button flex items-center justify-center gap-1.5 transition-all ${isCopied ? 'text-green-400 border-green-500/30' : 'text-slate-400'} active:scale-95`}
+            >
+              {isCopied ? <Check size={14} /> : null}
+              {isCopied ? 'Copiado' : 'Compartilhar'}
+            </button>
+            <button 
+              onClick={() => { if(!isSyncing) scratchCardRef.current?.reveal(); }} 
+              disabled={!isScratchingActive || isRevealed || isSyncing} 
+              className={`py-3.5 rounded-xl text-[10px] font-bold uppercase custom-button ${(!isScratchingActive || isRevealed || isSyncing) ? 'opacity-40' : 'text-slate-400 active:scale-95'}`}
+            >
+              Revelar
+            </button>
+          </div>
+
           <button 
-            onClick={handleRedeem} 
-            disabled={!isRevealed || !currentPrize?.iswinning} 
-            className={`py-3.5 rounded-xl text-[10px] font-bold uppercase custom-button ${(!isRevealed || !currentPrize?.iswinning) ? 'opacity-40 grayscale' : 'text-slate-200 active:scale-95 bg-green-600 border-green-500 shadow-lg shadow-green-900/20'}`}
+            onClick={() => window.open(salesWhatsappLink, '_blank')}
+            className="w-full py-4 rounded-xl text-[11px] font-black uppercase custom-button text-indigo-400 border-indigo-500/30 bg-indigo-500/5 hover:bg-indigo-500/10 flex items-center justify-center gap-2 active:scale-[0.98] transition-all"
           >
-            {isRedeemed ? 'Resgatado!' : 'Quero resgatar'}
-          </button>
-          <button 
-            onClick={shareApp} 
-            className={`py-3.5 rounded-xl text-[10px] font-bold uppercase custom-button flex items-center justify-center gap-1.5 transition-all ${isCopied ? 'text-green-400 border-green-500/30' : 'text-slate-400'} active:scale-95`}
-          >
-            {isCopied ? <Check size={14} /> : null}
-            {isCopied ? 'Copiado' : 'Compartilhar'}
-          </button>
-          <button 
-            onClick={() => { if(!isSyncing) scratchCardRef.current?.reveal(); }} 
-            disabled={!isScratchingActive || isRevealed || isSyncing} 
-            className={`py-3.5 rounded-xl text-[10px] font-bold uppercase custom-button ${(!isScratchingActive || isRevealed || isSyncing) ? 'opacity-40' : 'text-slate-400 active:scale-95'}`}
-          >
-            Revelar
+            <Wand2 size={16} />
+            Quero fazer minha própria raspadinha
           </button>
         </div>
 
